@@ -4,10 +4,11 @@ A working demo of **Openslot**, a cancellation recovery product for independent 
 
 **Everything is fictional. No real patients, no real SMS, no data leaves your browser.**
 
-## Two apps, one shared state
+## Two apps, one shared backend
 - `index.html` is the **clinic app**. Sign in as Reception, Dentist or Owner.
-- `patient.html` is the **patient app**. Pick a demo patient. Open it in a second window or on a second tab.
-- Both read and write the same data (browser storage), so a change in one window shows up live in the other, like a real backend.
+- `patient.html` is the **patient app**. Pick a demo patient.
+- Both talk to a **Supabase** database (Postgres in the cloud). A *room* is one shared demo, identified by `?room=abc123` in the link. Open the patient app on your phone with the same room code (Demo tools shows a QR code) and every change appears on every device within about a second.
+- If Supabase is not reachable, the demo falls back to this browser only (tabs still sync). The top bar shows **Live** or **This browser only**.
 
 ## Try the full loop (about 2 minutes)
 1. Open the clinic app, sign in as **Reception**.
@@ -35,7 +36,13 @@ No build step: open `index.html`, or run `python3 -m http.server` in this folder
 ## Deploy on Vercel
 Import the repo on vercel.com, framework preset **Other**, leave build command and output directory empty, deploy. Suggested project name `openslot-demo`.
 
+## How the backend works
+- One table, `demo_rooms (id, state jsonb, version)`, in Supabase project `openslot-demo` (Frankfurt). Row Level Security is on: the public key can read rooms, but it **cannot write directly**. Writes go through two SQL functions (`get_or_create_room`, `put_room_state`). `put_room_state` is a compare-and-swap on `version`, so two people clicking at once never overwrite each other, the app re-applies the loser's change on top.
+- The browser polls the version every ~1.2 s (about 5 s when the tab is hidden). Rooms older than 14 days are purged.
+- The key in `config.js` is the public (anon) key. It is meant to be public.
+- The SQL is in `supabase/migration.sql`.
+
 ## Honest limits of the demo
-- No real backend or SMS: state lives in `localStorage`, sync works between windows of the same browser. A real product needs a server database, an SMS gateway, authentication, and a data processing agreement with each clinic.
+- Anyone with a room link can change that room, and rooms are readable if you know the room code. That is fine for fictional data and a classroom demo, it is not a real security model. A real product needs authentication, per-clinic tenants, an SMS gateway, encryption and a data processing agreement with each clinic.
 - Matching is deliberately simple: service, availability, notice, then the clinic rules.
 - Numbers on the Recovery page for earlier weeks are sample data. "Staff time saved" assumes 12 minutes of phoning per refilled slot.

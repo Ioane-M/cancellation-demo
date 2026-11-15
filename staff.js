@@ -39,9 +39,16 @@ function loginView() {
       <div class="demo-accounts"><div class="section-title" style="padding-left:0">Demo accounts, pick a role</div>
         ${ACCOUNTS.map(a => `<button class="acct" data-action="login" data-role="${a.role}"><strong>${esc(a.name)}</strong><span>${a.title}</span></button>`).join('')}
       </div>
-      <p class="note">Student project demo. Everything on this site is fictional. <a href="patient.html">Open the patient app</a></p>
+      <p class="note">Student project demo. Everything on this site is fictional. <a href="${OS.link('patient.html')}">Open the patient app</a></p>
     </div></div>`;
 }
+
+function syncChip() {
+  const y = OS.sync();
+  return y.online ? `<span class="sync live" title="Shared demo room. Changes show up live on every device with this room code.">● Live · room ${esc(y.room)}</span>`
+    : `<span class="sync off" title="${esc(y.error || 'Not connected')}">○ This browser only · room ${esc(y.room)}</span>`;
+}
+function qrSvg(url) { try { const q = qrcode(0, 'M'); q.addData(url); q.make(); return q.createSvgTag({ cellSize: 5, margin: 0, scalable: true }); } catch (e) { return ''; } }
 
 /* ---------- shell ---------- */
 function shell(body, route) {
@@ -54,7 +61,7 @@ function shell(body, route) {
   <header class="topbar">
     <div class="brand"><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="currentColor"/><path d="M9 16a7 7 0 1 1 7 7" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/></svg>
       <span class="wordmark">Openslot</span><span class="divider" aria-hidden="true"></span><span class="clinic">${CLINIC} <span class="muted">Vienna</span></span></div>
-    <div class="topbar-right"><span class="clock">Tue 17 Nov, ${fmt(S().clock)}</span><span class="demo-tag">Demo with fake data</span>
+    <div class="topbar-right"><span class="clock">Tue 17 Nov, ${fmt(S().clock)}</span>${syncChip()}<span class="demo-tag">Demo with fake data</span>
       <button class="btn small" data-action="tools">Demo tools</button>
       <div class="user"><span class="avatar" aria-hidden="true">${esc(session.name.split(' ').map(x => x[0]).join('').slice(0, 2))}</span><div class="user-t"><strong>${esc(session.name)}</strong><span>${ROLE_LABEL[role()]}</span></div>
       <button class="btn ghost small" data-action="logout">Sign out</button></div></div>
@@ -116,7 +123,7 @@ function panel() {
       ${can(role(), 'cancel') ? `<div class="field" style="margin-top:0"><label for="reason">Reason for cancelling</label>
         <select id="reason"><option>Patient called</option><option>Patient is ill</option><option>Patient cannot make it</option><option>Practitioner unavailable</option></select></div>
         <button class="btn danger block" style="margin-top:14px" data-action="cancel" data-slot="${s.id}">Cancel appointment and find a replacement</button>
-        <p class="note">Patients can also cancel in their own app. Open <a href="patient.html" target="_blank" rel="noopener">the patient app</a> as ${esc(p.name)} to try it.</p>` : '<p class="note">Your role cannot cancel appointments.</p>'}</div></div>`;
+        <p class="note">Patients can also cancel in their own app. Open <a href="${OS.link('patient.html')}" target="_blank" rel="noopener">the patient app</a> as ${esc(p.name)} to try it.</p>` : '<p class="note">Your role cannot cancel appointments.</p>'}</div></div>`;
   }
   if (s.status === 'refilled') {
     const f = OS.patientById(s.filledBy);
@@ -148,8 +155,8 @@ function waitRows() {
     .filter(p => ui.filter === 'All' || p.wl.services.includes(ui.filter)).filter(p => !q || p.name.toLowerCase().includes(q))
     .sort((a, b) => (a.wl.status === 'waiting' ? 0 : 1) - (b.wl.status === 'waiting' ? 0 : 1) || b.wl.wait - a.wl.wait)
     .map(p => `<tr class="clickable" data-action="open-patient" data-p="${p.id}" tabindex="0"><td><strong>${esc(p.name)}</strong></td><td>${p.wl.services.map(esc).join(', ')}</td><td class="num">${p.wl.wait} days</td>
-      <td><span class="mini">${p.wl.avail.map(d => `<i class="${d.M || d.A || d.E ? 'on' : ''}"></i>`).join('')}</span></td><td>${noticeLabel(p.wl.notice)}</td>
-      <td>${p.wl.flag ? '<span class="chip warn">Clinical flag</span>' : '<span class="dim">None</span>'}</td><td>${p.wl.status === 'waiting' ? '<span class="chip info">Waiting</span>' : '<span class="chip ok">Moved earlier</span>'}</td></tr>`).join('') || '<tr><td colspan="7" class="dim">No patients match.</td></tr>';
+      <td class="hide-sm"><span class="mini">${p.wl.avail.map(d => `<i class="${d.M || d.A || d.E ? 'on' : ''}"></i>`).join('')}</span></td><td class="hide-sm">${noticeLabel(p.wl.notice)}</td>
+      <td class="hide-sm">${p.wl.flag ? '<span class="chip warn">Clinical flag</span>' : '<span class="dim">None</span>'}</td><td>${p.wl.status === 'waiting' ? '<span class="chip info">Waiting</span>' : '<span class="chip ok">Moved earlier</span>'}</td></tr>`).join('') || '<tr><td colspan="7" class="dim">No patients match.</td></tr>';
 }
 function viewWaiting() {
   const filters = ['All', ...SERVICES].map(f => `<button type="button" data-action="filter" data-s="${esc(f)}" aria-pressed="${ui.filter === f}">${esc(f)}</button>`).join('');
@@ -157,7 +164,7 @@ function viewWaiting() {
     ${can(role(), 'waitlist-edit') ? '<button class="btn primary" data-action="add-open">Add patient</button>' : ''}</div>
     <section class="card"><div class="toolbar"><div class="seg" role="group" aria-label="Filter by service">${filters}</div>
     <input type="search" id="search" placeholder="Search by name" aria-label="Search by name" value="${esc(ui.search)}"></div>
-    <div class="table-wrap"><table><thead><tr><th>Patient</th><th>Wants</th><th class="num">Waiting</th><th>Days free</th><th>Notice needed</th><th>Clinical flag</th><th>Status</th></tr></thead><tbody id="wl-body">${waitRows()}</tbody></table></div></section>`;
+    <div class="table-wrap"><table><thead><tr><th>Patient</th><th>Wants</th><th class="num">Waiting</th><th class="hide-sm">Days free</th><th class="hide-sm">Notice needed</th><th class="hide-sm">Clinical flag</th><th>Status</th></tr></thead><tbody id="wl-body">${waitRows()}</tbody></table></div></section>`;
 }
 function availGrid(p, editable, attr) {
   const head = ['<div></div>', ...DAYS.map(d => `<div class="h">${d}</div>`)].join('');
@@ -193,9 +200,9 @@ function addModal() {
 
 /* ---------- messages, rules, recovery, settings, audit ---------- */
 function viewMessages() {
-  const rows = S().outbox.slice().reverse().map(m => { const p = OS.patientById(m.pid); return `<tr><td class="dim nowrap">Tue ${esc(m.time)}</td><td class="nowrap"><strong>${esc(p.name)}</strong><br><span class="dim">${esc(p.phone)}</span></td><td><span class="chip ${m.kind === 'offer' ? 'info' : 'neutral'}">${m.kind === 'offer' ? 'Offer' : 'Confirmation'}</span></td><td>${esc(m.text)}</td></tr>`; }).join('');
-  return `<div class="page-head"><div><h1>Messages</h1><p>Every SMS Openslot sends. In the real product these go out through an SMS gateway. In this demo they appear in the patient app, so open it in a second window.</p></div><a class="btn" href="patient.html" target="_blank" rel="noopener">Open patient app</a></div>
-  <section class="card"><div class="table-wrap"><table><thead><tr><th>Sent</th><th>To</th><th>Type</th><th>Message</th></tr></thead><tbody>${rows || '<tr><td colspan="4" class="empty">No messages yet. Cancel an appointment on the Today page.</td></tr>'}</tbody></table></div></section>`;
+  const rows = S().outbox.slice().reverse().map(m => { const p = OS.patientById(m.pid); return `<tr><td class="dim nowrap">Tue ${esc(m.time)}</td><td class="nowrap"><strong>${esc(p.name)}</strong><br><span class="dim">${esc(p.phone)}</span></td><td class="hide-sm"><span class="chip ${m.kind === 'offer' ? 'info' : 'neutral'}">${m.kind === 'offer' ? 'Offer' : 'Confirmation'}</span></td><td>${esc(m.text)}</td></tr>`; }).join('');
+  return `<div class="page-head"><div><h1>Messages</h1><p>Every SMS Openslot sends. In the real product these go out through an SMS gateway. In this demo they appear in the patient app, so open it in a second window.</p></div><a class="btn" href="${OS.link('patient.html')}" target="_blank" rel="noopener">Open patient app</a></div>
+  <section class="card"><div class="table-wrap"><table><thead><tr><th>Sent</th><th>To</th><th class="hide-sm">Type</th><th>Message</th></tr></thead><tbody>${rows || '<tr><td colspan="4" class="empty">No messages yet. Cancel an appointment on the Today page.</td></tr>'}</tbody></table></div></section>`;
 }
 function viewRules() {
   const edit = can(role(), 'rules');
@@ -253,9 +260,13 @@ function tools() {
   <div class="drawer-body"><div class="kv"><span>Demo clock</span><strong>Tue 17 Nov, ${fmt(S().clock)}</strong></div>
     <div class="tool-row"><button class="btn" data-action="advance" data-m="5">Move 5 min forward</button><button class="btn" data-action="advance" data-m="15">Move 15 min forward</button></div>
     <p class="note">Offers expire when the clock passes their time. Moving the clock is how you show an unanswered offer.</p>
+    <div class="section-title" style="padding-left:0">Show it on a phone</div>
+    <div class="qr-box"><div class="qr">${qrSvg(OS.link('patient.html'))}</div><div><strong>Scan to open the patient app</strong><p class="note" style="margin-top:4px">Same room, so phone and laptop stay in sync. Room code <strong>${esc(OS.room())}</strong>.</p>
+      <p class="note" style="word-break:break-all">${esc(OS.link('patient.html'))}</p></div></div>
+    <button class="btn block" style="margin-top:8px" data-action="new-room">Start a fresh demo room</button>
     <div class="section-title" style="padding-left:0">Shortcuts</div>
     <button class="btn block" data-action="sim-cancel" ${s4.status === 'booked' ? '' : 'disabled'}>Oskar Lindner cancels his 10:00 slot in the patient app</button>
-    <a class="btn block" style="margin-top:8px;text-align:center;text-decoration:none" href="patient.html" target="_blank" rel="noopener">Open the patient app in a new window</a>
+    <a class="btn block" style="margin-top:8px;text-align:center;text-decoration:none" href="${OS.link('patient.html')}" target="_blank" rel="noopener">Open the patient app in a new window</a>
     <button class="btn danger block" style="margin-top:8px" data-action="reset">Reset all demo data</button></div></aside>`;
 }
 
@@ -293,6 +304,7 @@ document.addEventListener('click', e => {
   else if (a === 'add-close') ui.addOpen = false;
   else if (a === 'move-rule') { OS.update(st => { const i = +d.i, j = i + +d.dir; [st.rules[i], st.rules[j]] = [st.rules[j], st.rules[i]]; st.approval = { by: session.name, at: 'just now' }; st.audit.push({ t: fmt(st.clock), actor: who, action: 'Changed the order of allocation rules' }); }); return; }
   else if (a === 'tools') ui.tools = !ui.tools;
+  else if (a === 'new-room') { OS.newRoom(); return; }
   else if (a === 'advance') { OS.advance(+d.m); return; }
   else if (a === 'sim-cancel') { OS.cancel(4, 'patient', 'Feeling unwell', 'Oskar Lindner (patient app)'); ui.tools = false; ui.selected = 4; location.hash = '#/today'; render(); return; }
   else if (a === 'reset') { OS.reset(); ui.selected = null; ui.drawer = null; ui.tools = false; toast('Demo data reset'); return; }

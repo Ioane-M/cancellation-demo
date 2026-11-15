@@ -79,14 +79,89 @@ function seed() {
   };
 }
 
-/* ---------- storage and sync ---------- */
+/* ---------- rooms, storage and live sync ---------- */
+/* A "room" is one shared demo. Everyone who opens a link with the same ?room= sees and changes the same data,
+   through Supabase (a database in the cloud). If the network or Supabase is not reachable, the demo keeps
+   working locally and syncs between tabs of the same browser. */
+const params = new URLSearchParams(location.search);
+function makeRoom() { const c = 'abcdefghjkmnpqrstuvwxyz23456789'; let r = ''; for (let i = 0; i < 6; i++) r += c[Math.floor(Math.random() * c.length)]; return r; }
+let ROOM = (params.get('room') || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);
+try { if (!ROOM) ROOM = localStorage.getItem('openslot-room') || ''; } catch (e) { /* storage blocked */ }
+if (!/^[a-z0-9]{3,20}$/.test(ROOM)) ROOM = makeRoom();
+try { localStorage.setItem('openslot-room', ROOM); } catch (e) { /* ignore */ }
+try { const u = new URL(location.href); if (u.searchParams.get('room') !== ROOM) { u.searchParams.set('room', ROOM); history.replaceState(null, '', u); } } catch (e) { /* ignore */ }
+const KEY_ROOM = KEY + '-' + ROOM;
+
+const CFG = window.OS_CONFIG || {};
+let API = CFG.url || '';
+const apiOverride = params.get('api'); // only for local testing
+if (apiOverride && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(apiOverride)) API = apiOverride;
+let online = false, version = 0, pending = [], pushing = false, lastError = '';
+
 const listeners = [];
-function load() { try { const s = JSON.parse(localStorage.getItem(KEY)); return s && s.v === 2 ? s : null; } catch (e) { return null; } }
-let S = load() || seed();
-function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* storage blocked, demo keeps working in memory */ } }
+function loadLocal() { try { const s = JSON.parse(localStorage.getItem(KEY_ROOM)); return s && s.v === 2 ? s : null; } catch (e) { return null; } }
+function saveLocal() { try { localStorage.setItem(KEY_ROOM, JSON.stringify(S)); } catch (e) { /* storage blocked, demo keeps working in memory */ } }
+let S = loadLocal() || seed();
 function changed() { listeners.forEach(f => f()); }
-window.addEventListener('storage', e => { if (e.key === KEY) { S = load() || S; changed(); } });
-function mutate(fn) { const fresh = load(); if (fresh) S = fresh; const r = fn(S); processExpiries(); save(); changed(); return r; }
+window.addEventListener('storage', e => { if (!online && e.key === KEY_ROOM) { S = loadLocal() || S; changed(); } });
+
+async function rpc(name, body) {
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 8000);
+  try {
+    const r = await fetch(API + '/rest/v1/rpc/' + name, { method: 'POST', signal: ctl.signal, headers: { apikey: CFG.key, Authorization: 'Bearer ' + CFG.key, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.json();
+  } finally { clearTimeout(t); }
+}
+async function getRow(cols) {
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 8000);
+  try {
+    const r = await fetch(API + '/rest/v1/demo_rooms?id=eq.' + ROOM + '&select=' + cols, { signal: ctl.signal, headers: { apikey: CFG.key, Authorization: 'Bearer ' + CFG.key } });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const rows = await r.json(); return rows[0] || null;
+  } finally { clearTimeout(t); }
+}
+async function push() {
+  if (pushing) return; pushing = true;
+  try {
+    while (pending.length && online) {
+      const n = pending.length;
+      const res = (await rpc('put_room_state', { p_room: ROOM, p_expected: version, p_state: S }))[0];
+      if (res.ok) { version = res.version; pending = pending.slice(n); }
+      else { // somebody else changed the room first: take their version and apply our unsent changes on top
+        S = res.state; version = res.version;
+        pending.forEach(f => { try { f(S); } catch (e) { /* ignore */ } });
+        processExpiries(); saveLocal(); changed();
+      }
+    }
+  } catch (e) { online = false; pending = []; lastError = String(e.message || e); changed(); }
+  pushing = false;
+}
+async function poll() {
+  if (online && !pushing && !pending.length) {
+    try {
+      const head = await getRow('version');
+      if (head && head.version > version) { const row = await getRow('state,version'); if (row && row.version > version && !pending.length) { S = row.state; version = row.version; saveLocal(); changed(); } }
+    } catch (e) { /* try again next time */ }
+  }
+  setTimeout(poll, document.hidden ? 5000 : 1200);
+}
+const ready = (async () => {
+  if (!API || !CFG.key) return;
+  try {
+    const rows = await rpc('get_or_create_room', { p_room: ROOM, p_seed: S });
+    S = rows[0].state; version = rows[0].version; online = true; saveLocal(); changed();
+    poll();
+    rpc('purge_old_rooms', {}).catch(() => {});
+  } catch (e) { online = false; lastError = String(e.message || e); changed(); }
+})();
+
+function mutate(fn) {
+  const fresh = !online ? loadLocal() : null; if (fresh) S = fresh;
+  const r = fn(S); processExpiries(); saveLocal(); changed();
+  if (online) { pending.push(fn); push(); }
+  return r;
+}
 const state = () => S;
 const onChange = f => listeners.push(f);
 const slotById = id => S.slots.find(s => s.id === +id);
@@ -228,7 +303,11 @@ const api = {
   respond: (offerId, answer, actor) => mutate(() => doRespond(offerId, answer, actor)),
   advance: min => mutate(() => { S.clock += min; log('Demo tools', `Clock moved forward ${min} min`); }),
   update: fn => mutate(fn),
-  reset: () => { S = seed(); save(); changed(); },
+  reset: () => mutate(() => { Object.keys(S).forEach(k => delete S[k]); Object.assign(S, seed()); }),
+  ready, sync: () => ({ online, room: ROOM, error: lastError }),
+  room: () => ROOM,
+  link: page => location.origin + location.pathname.replace(/[^/]*$/, '') + page + '?room=' + ROOM,
+  newRoom: () => { const r = makeRoom(); try { localStorage.setItem('openslot-room', r); } catch (e) { /* ignore */ } location.href = location.pathname + '?room=' + r; },
   csvAudit: () => 'time,actor,action\n' + S.audit.map(a => [a.t, a.actor, '"' + a.action.replace(/"/g, '""') + '"'].join(',')).join('\n'),
 };
 return api;

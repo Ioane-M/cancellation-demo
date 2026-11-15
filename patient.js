@@ -19,7 +19,7 @@ function loginView() {
     <h1>Your appointments at ${CLINIC}</h1><p class="muted">Get offered earlier appointments by SMS. In the real product you open the app from the link in your SMS. In this demo, pick a patient.</p>
     <div class="section-title" style="padding-left:0">Waiting for an earlier appointment</div>${waiting.slice(0, 6).map(btn).join('')}
     <div class="section-title" style="padding-left:0">Has an appointment today (can cancel it)</div>${holders.slice(0, 6).map(btn).join('')}
-    <p class="note">Student project demo, all patients are fictional. <a href="index.html">Open the clinic app</a></p></div></div>`;
+    <p class="note">Student project demo, all patients are fictional. <a href="${OS.link('index.html')}">Open the clinic app</a></p></div></div>`;
 }
 
 function offerCard(s, o, full) {
@@ -95,12 +95,12 @@ function render() {
   const p = me(), unread = S().outbox.filter(m => m.pid === pid).length;
   const tab = (k, l, d) => `<a href="#/${k}" ${(parts[0] === k || (k === 'home' && !['availability', 'messages', 'privacy'].includes(parts[0]))) ? 'aria-current="page"' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>${l}</a>`;
   app.innerHTML = `<div class="pt-wrap"><header class="pt-top"><div class="brand"><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="currentColor"/><path d="M9 16a7 7 0 1 1 7 7" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/></svg><span class="wordmark">Openslot</span></div>
-    <div class="topbar-right"><span class="demo-tag">Demo</span><button class="btn ghost small" data-action="tools">Tools</button><button class="btn ghost small" data-action="logout">Switch</button></div></header>
+    <div class="topbar-right"><span class="sync ${OS.sync().online ? 'live' : 'off'}" title="Room ${esc(OS.room())}">${OS.sync().online ? '● Live' : '○ Local'}</span><button class="btn ghost small" data-action="tools">Tools</button><button class="btn ghost small" data-action="logout">Switch</button></div></header>
     <main id="main" class="pt-main">${body}</main>
     <nav class="pt-tabs" aria-label="Main">${tab('home', 'Home', 'M3 11l9-8 9 8v10H3z')}${p.wl ? tab('availability', 'Availability', 'M3 5h18v16H3zM3 10h18M8 3v4M16 3v4') : ''}${tab('messages', 'Messages' + (unread ? ' (' + unread + ')' : ''), 'M4 5h16v11H8l-4 4z')}${tab('privacy', 'Privacy', 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z')}</nav></div>
     ${ui.confirm ? `<div class="scrim" data-action="confirm-no"></div><div class="modal" role="dialog" aria-modal="true"><h2>Cancel your appointment?</h2><div class="field" style="margin-top:8px"><label for="reason">Reason (optional)</label><select id="reason"><option>Feeling unwell</option><option>Schedule conflict</option><option>No longer needed</option><option>Other</option></select></div>
       <div class="modal-foot"><button class="btn" data-action="confirm-no">Keep it</button><button class="btn danger" data-action="confirm-yes">Cancel appointment</button></div></div>` : ''}
-    ${ui.tools ? `<div class="scrim" data-action="tools"></div><aside class="drawer small"><div class="drawer-head"><div><h2>Demo tools</h2><p class="dim">Clock: Tue 17 Nov, ${fmt(S().clock)}</p></div><button class="btn ghost small" data-action="tools">Close</button></div><div class="drawer-body"><div class="tool-row"><button class="btn" data-action="advance" data-m="5">+5 min</button><button class="btn" data-action="advance" data-m="15">+15 min</button></div><p class="note">Move the clock to let an offer expire.</p><a class="btn block" style="text-align:center;text-decoration:none" href="index.html" target="_blank" rel="noopener">Open the clinic app</a><button class="btn danger block" style="margin-top:8px" data-action="reset">Reset all demo data</button></div></aside>` : ''}
+    ${ui.tools ? `<div class="scrim" data-action="tools"></div><aside class="drawer small"><div class="drawer-head"><div><h2>Demo tools</h2><p class="dim">Clock: Tue 17 Nov, ${fmt(S().clock)}</p></div><button class="btn ghost small" data-action="tools">Close</button></div><div class="drawer-body"><div class="tool-row"><button class="btn" data-action="advance" data-m="5">+5 min</button><button class="btn" data-action="advance" data-m="15">+15 min</button></div><p class="note">Move the clock to let an offer expire.</p><a class="btn block" style="text-align:center;text-decoration:none" href="${OS.link('index.html')}" target="_blank" rel="noopener">Open the clinic app</a><button class="btn danger block" style="margin-top:8px" data-action="reset">Reset all demo data</button></div></aside>` : ''}
     ${ui.toast ? `<div class="toast" role="status">${esc(ui.toast)}</div>` : ''}`;
 }
 OS.onChange(render);
