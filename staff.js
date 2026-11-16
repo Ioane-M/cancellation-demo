@@ -1,6 +1,6 @@
 (() => {
 'use strict';
-const { esc, fmt, partOf, partName, noticeLabel, can, DAYS, TODAY_IDX, PARTS, SERVICES, NOTICES, CLINIC } = OS;
+const { esc, fmt, partOf, partName, noticeLabel, can, DAYS, TODAY_IDX, PARTS, NOTICES } = OS;
 const $ = s => document.querySelector(s);
 const ACCOUNTS = [
   { role: 'reception', name: 'Maria Huber', title: 'Reception', email: 'maria@linden-dental.example' },
@@ -8,12 +8,16 @@ const ACCOUNTS = [
   { role: 'owner', name: 'Dr. Okafor', title: 'Practice owner', email: 'okafor@linden-dental.example' },
 ];
 const ROLE_LABEL = { reception: 'Reception', dentist: 'Dentist', owner: 'Owner' };
+const SLUG = { today: 'today', waiting: 'waiting-list', messages: 'messages', rules: 'rules', recovery: 'recovery', settings: 'settings', audit: 'audit' };
+const KEYOF = Object.fromEntries(Object.entries(SLUG).map(([k, v]) => [v, k]));
+const TITLES = { today: 'Today', waiting: 'Waiting list', messages: 'Messages', rules: 'Allocation rules', recovery: 'Recovery', settings: 'Settings', audit: 'Audit log' };
+const pathFor = k => '/' + OS.room() + (k ? '/' + SLUG[k] : '') + OS.qs();
 let session = null;
 try { session = JSON.parse(sessionStorage.getItem('openslot-session')); } catch (e) { /* none */ }
 const t0 = Date.now();
 const skeleton = () => OS.sync().connecting && Date.now() - t0 < 2500;
 setTimeout(() => render(), 2600);
-const ui = { menu: null, more: false, tour: false, selected: null, filter: 'All', search: '', drawer: null, tools: false, addOpen: false, toast: null };
+const ui = { setTab: 'clinic', menu: null, more: false, tour: false, selected: null, filter: 'All', search: '', drawer: null, tools: false, addOpen: false, toast: null };
 const role = () => session && session.role;
 const S = () => OS.state();
 
@@ -76,14 +80,14 @@ function popover() {
 /* ---------- shell ---------- */
 function tabs(nav, route, st) {
   const main = nav.filter(n => ['today', 'waiting', 'messages', 'recovery'].includes(n[0]));
-  return main.map(([k, l, d]) => `<a href="#/${k}" ${k === route ? 'aria-current="page"' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>${l === 'Waiting list' ? 'Waiting' : l}${k === 'today' && st.open ? `<span class="badge">${st.open}</span>` : ''}</a>`).join('')
+  return main.map(([k, l, d]) => `<a href="${pathFor(k)}" data-nav="${k}" ${k === route ? 'aria-current="page"' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>${l === 'Waiting list' ? 'Waiting' : l}${k === 'today' && st.open ? `<span class="badge">${st.open}</span>` : ''}</a>`).join('')
     + `<button type="button" data-action="more" aria-label="More"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01"/></svg>More</button>`;
 }
 function moreSheet(nav) {
   const rest = nav.filter(n => !['today', 'waiting', 'messages', 'recovery'].includes(n[0]));
   const ico = d => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
   return `<div class="scrim" data-action="more"></div><div class="sheet" role="dialog" aria-label="More"><div class="grip"></div>
-    ${rest.map(([k, l, d]) => `<a href="#/${k}" data-action="more">${ico(d)}${l}</a>`).join('')}
+    ${rest.map(([k, l, d]) => `<a href="${pathFor(k)}" data-nav="${k}" data-action="more">${ico(d)}${l}</a>`).join('')}
     <button class="row" data-action="tour">${ico('M5 4v16M5 5h11l-2 4 2 4H5')}Pitch walkthrough</button>
     <button class="row" data-action="tools">${ico('M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 12h3M18 12h3M12 3v3M12 18v3')}Demo tools</button>
     <button class="row" data-action="logout">${ico('M9 4H5v16h4M16 8l4 4-4 4M20 12H9')}Sign out (${esc(session.name)})</button></div>`;
@@ -97,7 +101,7 @@ function shell(body, route) {
   return `<a class="skip" href="#main">Skip to content</a>
   <header class="topbar">
     <div class="brand"><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="currentColor"/><path d="M9 16a7 7 0 1 1 7 7" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/></svg>
-      <span class="wordmark">Openslot</span><span class="divider" aria-hidden="true"></span><span class="clinic">${CLINIC} <span class="muted">Vienna</span></span></div>
+      <span class="wordmark">Openslot</span><span class="divider" aria-hidden="true"></span><span class="clinic">${esc(OS.clinic())} <span class="muted">${esc(S().clinic.city)}</span></span></div>
     <label class="gsearch"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input id="gsearch" type="search" placeholder="Search patients" aria-label="Search patients" value="${esc(ui.search)}" autocomplete="off"></label>
     <div class="topbar-right">
       <button class="icon-btn" data-action="menu" data-m="demo" aria-label="Demo menu" aria-haspopup="menu" aria-expanded="${ui.menu === 'demo'}" title="Demo menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01" stroke-width="3"/></svg></button>
@@ -106,7 +110,7 @@ function shell(body, route) {
   </header>${ui.menu ? popover() : ''}
   ${(!OS.sync().online && !OS.sync().connecting) ? '<div class="offline-banner" role="status">Working in this browser only. Changes are not shared with other devices right now.</div>' : ''}
   <div class="shell"><nav class="nav" aria-label="Main">
-    ${nav.map(([k, l, d]) => `<a href="#/${k}" title="${l}" ${k === route ? 'aria-current="page"' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg><span class="l">${l}</span>${k === 'today' && st.open ? `<span class="badge">${st.open}</span>` : ''}</a>`).join('')}
+    ${nav.map(([k, l, d]) => `<a href="${pathFor(k)}" data-nav="${k}" title="${l}" ${k === route ? 'aria-current="page"' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg><span class="l">${l}</span>${k === 'today' && st.open ? `<span class="badge">${st.open}</span>` : ''}</a>`).join('')}
 </nav>
     <main id="main" tabindex="-1">${body}</main></div>
   <nav class="tabbar" aria-label="Main">${tabs(nav, route, st)}</nav>
@@ -116,22 +120,31 @@ function shell(body, route) {
 }
 
 /* ---------- today ---------- */
-const PX = 1.5, T0 = 480, T1 = 17 * 60;
+const PX = 1.5;
+function bounds() {
+  const h = S().hours[TODAY_IDX]; let T0 = h.open ? Math.floor(OS.toMin(h.from) / 60) * 60 : 480, T1 = h.open ? Math.ceil(OS.toMin(h.to) / 60) * 60 : 17 * 60;
+  S().slots.forEach(x => { T0 = Math.min(T0, Math.floor(x.start / 60) * 60); T1 = Math.max(T1, Math.ceil((x.start + x.dur) / 60) * 60); });
+  return { T0, T1 };
+}
 function schedule() {
-  const slots = S().slots, docs = ['Dr. Weiss', 'Dr. Okafor'], H = (T1 - T0) * PX;
-  const hours = []; for (let h = 8; h <= 17; h++) hours.push(h);
-  const cols = docs.map(d => `<div class="sched-col"><div class="sched-head">${d}</div><div class="sched-body" style="height:${H}px">
-    ${hours.map(h => `<div class="hline" style="top:${(h * 60 - T0) * PX}px"></div>`).join('')}
-    ${slots.filter(s => s.doc === d).map(s => {
-      const p = OS.patientById(s.patientId), po = OS.pendingOffer(s), sel = ui.selected === s.id;
-      const who = s.status === 'refilled' ? OS.patientById(s.filledBy).name : p.name;
-      const sub = esc(s.service) + (s.status === 'cancelled' ? (po ? ', offer sent to ' + OS.patientById(po.pid).name.split(' ')[0] : ', needs attention') : s.status === 'refilled' ? ', refilled' : s.status === 'unfilled' ? ', unfilled' : s.status === 'done' ? ', done' : '');
-      return `<button class="blk ${s.status} ${po ? 'pending' : ''} ${sel ? 'sel' : ''}" style="top:${(s.start - T0) * PX}px;height:${s.dur * PX - 3}px" data-action="select" data-slot="${s.id}" aria-label="${fmt(s.start)} ${esc(s.service)} ${esc(who)}">
-        <span class="blk-t">${fmt(s.start)}</span><span class="blk-main"><span class="blk-n">${esc(who)}</span><span class="blk-s">${sub}</span></span></button>`;
+  const { T0, T1 } = bounds(), H = (T1 - T0) * PX, hrs = S().hours[TODAY_IDX], slots = S().slots;
+  const openM = OS.toMin(hrs.from), closeM = OS.toMin(hrs.to), hoursList = []; for (let h = T0 / 60; h <= T1 / 60; h++) hoursList.push(h);
+  const docs = S().practitioners.filter(p => p.days[TODAY_IDX] || slots.some(x => x.doc === p.name)).map(p => p.name);
+  const band = (x, y) => y > x ? `<div class="closed-band" style="top:${(x - T0) * PX}px;height:${(y - x) * PX}px" title="Clinic closed"></div>` : '';
+  const bands = hrs.open ? band(T0, Math.min(Math.max(openM, T0), T1)) + band(Math.max(Math.min(closeM, T1), T0), T1) : band(T0, T1);
+  const now = S().clock >= T0 && S().clock <= T1;
+  const cols = docs.map(d => `<div class="sched-col"><div class="sched-head">${esc(d)}</div><div class="sched-body" style="height:${H}px">
+    ${bands}${hoursList.map(h => `<div class="hline" style="top:${(h * 60 - T0) * PX}px"></div>`).join('')}
+    ${slots.filter(x => x.doc === d).map(x => {
+      const p = OS.patientById(x.patientId), po = OS.pendingOffer(x), sel = ui.selected === x.id;
+      const who = x.status === 'refilled' ? OS.patientById(x.filledBy).name : p.name;
+      const sub = esc(x.service) + (x.status === 'cancelled' ? (po ? ', offer sent to ' + OS.patientById(po.pid).name.split(' ')[0] : x.queued ? ', offer waits for opening' : ', needs attention') : x.status === 'refilled' ? ', refilled' : x.status === 'unfilled' ? ', unfilled' : x.status === 'done' ? ', done' : '');
+      return `<button class="blk ${x.status} ${po ? 'pending' : ''} ${sel ? 'sel' : ''}" style="top:${(x.start - T0) * PX}px;height:${x.dur * PX - 3}px" data-action="select" data-slot="${x.id}" aria-label="${fmt(x.start)} ${esc(x.service)} ${esc(who)}">
+        <span class="blk-t">${fmt(x.start)}</span><span class="blk-main"><span class="blk-n">${esc(who)}</span><span class="blk-s">${sub}</span></span></button>`;
     }).join('')}
-    ${S().clock >= T0 && S().clock <= T1 ? `<div class="nowline" style="top:${(S().clock - T0) * PX}px"></div>` : ''}
+    ${now ? `<div class="nowline" style="top:${(S().clock - T0) * PX}px"></div>` : ''}
   </div></div>`).join('');
-  return `<div class="sched"><div class="sched-axis"><div class="sched-head">&nbsp;</div><div class="sched-body" style="height:${H}px">${hours.map(h => `<span style="top:${(h * 60 - T0) * PX - 7}px">${String(h).padStart(2, '0')}:00</span>`).join('')}${S().clock >= T0 && S().clock <= T1 ? `<span class="nowpill" style="top:${(S().clock - T0) * PX - 8}px">${fmt(S().clock)}</span>` : ''}</div></div>${cols}</div>`;
+  return `<div class="sched" style="grid-template-columns:52px repeat(${Math.max(1, docs.length)},minmax(0,1fr))"><div class="sched-axis"><div class="sched-head">&nbsp;</div><div class="sched-body" style="height:${H}px">${hoursList.map(h => `<span style="top:${(h * 60 - T0) * PX - 7}px">${String(h).padStart(2, '0')}:00</span>`).join('')}${now ? `<span class="nowpill" style="top:${(S().clock - T0) * PX - 8}px">${fmt(S().clock)}</span>` : ''}</div></div>${cols || '<div class="empty">No practitioner works today. Add one in Settings, Team.</div>'}</div>`;
 }
 function viewToday() {
   const st = OS.stats(), pend = S().slots.filter(s => OS.pendingOffer(s)).length;
@@ -140,8 +153,9 @@ function viewToday() {
   return `<div class="page-head"><div><h1>Today, Tuesday 17 November</h1>
     <p>Freed slots are offered to your waiting list automatically. Select an appointment to see its details.</p></div></div>
     <div class="tiles">${tile('Open cancellations', st.open, st.open ? 'hot' : '')}${tile('Offers waiting for a reply', pend)}${tile('Refilled today', S().slots.filter(s => s.status === 'refilled').length)}${tile('Unfilled today', S().slots.filter(s => s.status === 'unfilled').length)}</div>
+    ${!OS.isOpen(S().clock) ? `<div class="banner warn">${S().hours[TODAY_IDX].open ? 'The clinic is closed right now (' + S().hours[TODAY_IDX].from + ' to ' + S().hours[TODAY_IDX].to + ').' : 'The clinic is closed today.'}${S().settings.quiet ? ' Offers are sent when it opens.' : ''}</div>` : ''}
     ${att && !S().settings.autoOffer ? `<div class="banner warn">${att} cancelled slot${att > 1 ? 's' : ''} need a staff decision. Automatic offers are switched off in Settings.</div>` : ''}
-    <div class="split"><section class="card sched-card" aria-label="Schedule"><div class="card-head"><h2>Schedule</h2><span class="dim">08:00 to 17:00</span></div><div class="legend"><span><i style="background:var(--booked)"></i>Booked</span><span><i style="background:var(--warn)"></i>Finding replacement</span><span><i style="background:var(--ok)"></i>Refilled</span><span><i style="background:var(--bad)"></i>Unfilled</span></div>${schedule()}</section>
+    <div class="split"><section class="card sched-card" aria-label="Schedule"><div class="card-head"><h2>Schedule</h2><span class="dim">${S().hours[TODAY_IDX].open ? 'Open ' + S().hours[TODAY_IDX].from + ' to ' + S().hours[TODAY_IDX].to : 'Closed today'}</span></div><div class="legend"><span><i style="background:var(--booked)"></i>Booked</span><span><i style="background:var(--warn)"></i>Finding replacement</span><span><i style="background:var(--ok)"></i>Refilled</span><span><i style="background:var(--bad)"></i>Unfilled</span></div>${schedule()}</section>
     <aside class="panel" aria-label="Appointment details">${panel()}</aside></div>`;
 }
 function offersTimeline(s) {
@@ -190,7 +204,7 @@ function panel() {
     ${can(role(), 'offer') && !po ? `<button class="btn small" style="margin-top:8px" data-action="offer" data-slot="${s.id}" data-p="${x.p.id}">Offer now</button>` : ''}</div></div>`;
   const out = x => `<div class="cand out"><div class="rank">–</div><div><div class="cand-name">${esc(x.p.name)}</div><div class="checks">${x.checks.avail ? '' : `<span class="chip bad">Not free ${DAYS[TODAY_IDX]} ${partName(partOf(s.start)).toLowerCase()}</span>`}${x.checks.notice ? '' : `<span class="chip bad">Needs ${noticeLabel(x.p.wl.notice)}, only ${Math.max(0, c.notice)} min left</span>`}</div></div></div>`;
   return `<div class="card">${head}
-    <div class="banner ${po ? 'info' : 'warn'}">${po ? `Offer sent to ${esc(OS.patientById(po.pid).name)}. Waiting for the reply, expires ${fmt(po.expiresAt)}.` : manual ? 'Automation is off. Choose who to offer this slot to.' : 'Openslot is choosing the next patient.'}</div>
+    <div class="banner ${po ? 'info' : 'warn'}">${po ? `Offer sent to ${esc(OS.patientById(po.pid).name)}. Waiting for the reply, expires ${fmt(po.expiresAt)}.` : s.queued ? `The clinic is closed. Openslot will send the offer when it opens${OS.nextOpenAt() != null ? ' at ' + fmt(OS.nextOpenAt()) : ''}.` : manual ? 'Automation is off. Choose who to offer this slot to.' : 'Openslot is choosing the next patient.'}</div>
     ${msg ? `<div class="sms-peek"><span class="dim">SMS sent to ${esc(OS.patientById(po.pid).phone)} at ${esc(msg.time)}</span><div class="sms">${esc(msg.text)}</div></div>` : ''}
     ${offersTimeline(s)}
     <div class="section-title">Next in line, ranked by the clinic rules (${c.eligible.length})</div>
@@ -210,7 +224,7 @@ function waitRows() {
       <td class="hide-sm">${p.wl.flag ? '<span class="chip warn">Clinical flag</span>' : '<span class="dim">None</span>'}</td><td>${p.wl.status === 'waiting' ? '<span class="chip info">Waiting</span>' : '<span class="chip ok">Moved earlier</span>'}</td></tr>`).join('') || '<tr><td colspan="7" class="dim">No patients match.</td></tr>';
 }
 function viewWaiting() {
-  const filters = ['All', ...SERVICES].map(f => `<button type="button" data-action="filter" data-s="${esc(f)}" aria-pressed="${ui.filter === f}">${esc(f)}</button>`).join('');
+  const filters = ['All', ...OS.services()].map(f => `<button type="button" data-action="filter" data-s="${esc(f)}" aria-pressed="${ui.filter === f}">${esc(f)}</button>`).join('');
   return `<div class="page-head"><div><h1>Waiting list</h1><p>Patients who want an earlier appointment. They keep their current booking until they accept an offer.</p></div>
     ${can(role(), 'waitlist-edit') ? '<button class="btn primary" data-action="add-open">Add patient</button>' : ''}</div>
     <section class="card"><div class="toolbar"><div class="seg" role="group" aria-label="Filter by service">${filters}</div>
@@ -243,7 +257,7 @@ function addModal() {
   return `<div class="scrim" data-action="add-close"></div><div class="modal" role="dialog" aria-modal="true" aria-label="Add patient">
     <h2>Add patient to the waiting list</h2>
     <form id="add-form"><label for="add-name">Full name</label><input id="add-name" required placeholder="For example Clara Neumann">
-      <fieldset><legend>Treatment wanted</legend>${SERVICES.map((sv, i) => `<label class="check"><input type="checkbox" name="svc" value="${esc(sv)}" ${i === 0 ? 'checked' : ''}> ${esc(sv)}</label>`).join('')}</fieldset>
+      <fieldset><legend>Treatment wanted</legend>${OS.services().map((sv, i) => `<label class="check"><input type="checkbox" name="svc" value="${esc(sv)}" ${i === 0 ? 'checked' : ''}> ${esc(sv)}</label>`).join('')}</fieldset>
       <label for="add-notice">Notice needed</label><select id="add-notice">${NOTICES.map(n => `<option value="${n.v}" ${n.v === 60 ? 'selected' : ''}>${n.l}</option>`).join('')}</select>
       <label class="check consent"><input type="checkbox" id="add-consent" required> The patient agreed to receive appointment offers by SMS (consent is stored with date).</label>
       <div class="modal-foot"><button type="button" class="btn" data-action="add-close">Cancel</button><button class="btn primary" type="submit">Add patient</button></div></form></div>`;
@@ -283,23 +297,64 @@ function viewRecovery() {
   <div class="two-col even"><section class="card"><div class="card-head"><h2>Recovery rate by week</h2></div><div class="chart"><svg viewBox="0 0 ${W} ${H + 34}" role="img" aria-label="Recovery rate by week">${grid}${bars}</svg></div></section>
   <section class="card"><div class="card-head"><h2>Offer log</h2></div><div class="table-wrap"><table class="log"><thead><tr><th>When</th><th>Slot</th><th>Patient</th><th>Result</th><th class="num">Reply</th></tr></thead><tbody>${rows}</tbody></table></div></section></div>`;
 }
+const DAY_FULL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+function setupChecks() {
+  const c = S(), tplOk = /\{link\}/.test(c.settings.template);
+  return [
+    ['Clinic details', !!(c.clinic.name.trim() && c.clinic.city.trim()), 'clinic'],
+    ['Opening hours', c.hours.some(h => h.open), 'hours'],
+    ['Team', c.practitioners.some(p => p.days.some(Boolean)), 'team'],
+    ['Treatments', c.services.some(x => x.active), 'treatments'],
+    ['Offers and messages', tplOk, 'offers'],
+  ];
+}
 function viewSettings() {
-  const s = S().settings, ex = OS.slotById(4);
-  return `<div class="page-head"><div><h1>Settings</h1><p>Practice owner only. These settings change how Openslot behaves for the whole clinic.</p></div></div>
-  <div class="two-col"><section class="card"><div class="card-head"><h2>Offers</h2></div><div class="card-body form">
+  const c = S(), s = c.settings, checks = setupChecks(), done = checks.filter(x => x[1]).length;
+  const tabs = [['clinic', 'Clinic'], ['hours', 'Opening hours'], ['team', 'Team'], ['treatments', 'Treatments'], ['offers', 'Offers and messages']];
+  const tab = ui.setTab;
+  let body = '';
+  if (tab === 'clinic') body = `<section class="card"><div class="card-head"><h2>Clinic details</h2></div><div class="card-body form">
+    <div class="field" style="margin-top:0"><label for="cn">Clinic name</label><input id="cn" value="${esc(c.clinic.name)}" data-change="clinic-name" autocomplete="off"></div>
+    <div class="field"><label for="cc">City</label><input id="cc" value="${esc(c.clinic.city)}" data-change="clinic-city" autocomplete="off"></div>
+    <div class="field"><label for="cp">Phone for patients</label><input id="cp" value="${esc(c.clinic.phone)}" data-change="clinic-phone" autocomplete="off"></div>
+    <p class="note">The name appears in the app header and at the start of every SMS.</p></div></section>`;
+  if (tab === 'hours') body = `<div class="two-col"><section class="card"><div class="card-head"><h2>Opening hours</h2><span class="dim">Today is ${DAY_FULL[TODAY_IDX]}</span></div>
+    ${c.hours.map((h, i) => `<div class="hrow ${h.open ? '' : 'closed'}"><label class="switch-row"><span class="switch"><input type="checkbox" data-change="hrs-open" data-d="${i}" ${h.open ? 'checked' : ''} aria-label="${DAY_FULL[i]} open"><span></span></span><strong>${DAY_FULL[i]}</strong></label>
+      ${h.open ? `<div class="hours-inputs"><input type="time" step="900" value="${h.from}" data-change="hrs-from" data-d="${i}" aria-label="${DAY_FULL[i]} opens"><span class="dim">to</span><input type="time" step="900" value="${h.to}" data-change="hrs-to" data-d="${i}" aria-label="${DAY_FULL[i]} closes"></div>` : '<span class="dim">Closed</span>'}</div>`).join('')}</section>
+    <section class="card"><div class="card-head"><h2>What opening hours change</h2></div><div class="card-body form">
+      <label class="switch-row"><span class="switch"><input type="checkbox" data-change="quiet" ${s.quiet ? 'checked' : ''}><span></span></span><span><strong>Do not text patients while the clinic is closed</strong><br><span class="dim">Offers for a cancelled slot wait until the clinic opens, so nobody gets a message at night.</span></span></label>
+      <ul class="plain" style="margin-top:16px"><li>The schedule shows your hours. Closed times are shaded.</li><li>Automatic offers respect the quiet rule above.</li><li>Staff can still send an offer by hand at any time.</li></ul></div></section></div>`;
+  if (tab === 'team') body = `<div class="two-col"><section class="card"><div class="card-head"><h2>Team</h2><span class="dim">${c.practitioners.length} practitioners</span></div>
+    ${c.practitioners.map(p => { const n = c.slots.filter(x => x.doc === p.name && x.status !== 'done').length; return `<div class="prac"><div class="prac-main"><span class="avatar" aria-hidden="true">${esc(p.name.split(' ').map(x => x[0]).join('').slice(0, 2))}</span><div class="prac-fields"><input value="${esc(p.name)}" data-change="prac-name" data-p="${p.id}" aria-label="Name" autocomplete="off"><input value="${esc(p.title)}" data-change="prac-title" data-p="${p.id}" aria-label="Role" autocomplete="off"></div></div>
+      <div class="prac-days" role="group" aria-label="Works on">${DAYS.map((d, i) => `<button type="button" data-action="prac-day" data-p="${p.id}" data-d="${i}" aria-pressed="${p.days[i]}">${d}</button>`).join('')}</div>
+      <p class="dim" style="font-size:12px">${n} open appointment${n === 1 ? '' : 's'} today</p></div>`; }).join('')}</section>
+    <section class="card"><div class="card-head"><h2>Add practitioner</h2></div><div class="card-body"><form id="prac-form" class="form"><label for="pn" style="font-weight:600;font-size:13px">Name</label><input id="pn" required placeholder="For example Dr. Novak" autocomplete="off"><label for="pt" style="font-weight:600;font-size:13px;margin-top:10px">Role</label><input id="pt" placeholder="For example Dentist" autocomplete="off"><button class="btn primary" type="submit" style="margin-top:14px">Add to team</button></form>
+      <p class="note">Practitioners who work on the day get a column in the schedule.</p></div></section></div>`;
+  if (tab === 'treatments') body = `<div class="two-col"><section class="card"><div class="card-head"><h2>Treatments</h2></div><div class="table-wrap"><table><thead><tr><th>Treatment</th><th>Length</th><th class="num">Offered</th></tr></thead><tbody>
+    ${c.services.map((x, i) => `<tr><td><strong>${esc(x.name)}</strong></td><td><select data-change="svc-dur" data-i="${i}" aria-label="Length of ${esc(x.name)}">${[15, 30, 45, 60, 75, 90].map(m => `<option value="${m}" ${m === x.duration ? 'selected' : ''}>${m} min</option>`).join('')}</select></td><td class="num"><label class="switch"><input type="checkbox" data-change="svc-active" data-i="${i}" ${x.active ? 'checked' : ''} aria-label="${esc(x.name)} offered"><span></span></label></td></tr>`).join('')}</tbody></table></div></section>
+    <section class="card"><div class="card-head"><h2>Add treatment</h2></div><div class="card-body"><form id="svc-form" class="form"><label for="sn" style="font-weight:600;font-size:13px">Name</label><input id="sn" required placeholder="For example Whitening" autocomplete="off"><label for="sd" style="font-weight:600;font-size:13px;margin-top:10px">Length</label><select id="sd">${[15, 30, 45, 60, 75, 90].map(m => `<option value="${m}" ${m === 30 ? 'selected' : ''}>${m} min</option>`).join('')}</select><button class="btn primary" type="submit" style="margin-top:14px">Add treatment</button></form>
+      <p class="note">Lengths apply to new bookings. Treatments that are switched off are hidden from patients and from the waiting list form.</p></div></section></div>`;
+  if (tab === 'offers') {
+    const ex = OS.slotById(4);
+    body = `<div class="two-col"><section class="card"><div class="card-head"><h2>Offers</h2></div><div class="card-body form">
     <label class="switch-row"><span class="switch"><input type="checkbox" data-change="auto" ${s.autoOffer ? 'checked' : ''}><span></span></span><span><strong>Send offers automatically</strong><br><span class="dim">Openslot contacts the next patient by itself. Staff can step in at any time. Switch off to confirm every offer by hand.</span></span></label>
     <div class="field"><label for="expiry">Offer is valid for</label><select id="expiry" data-change="expiry">${[10, 15, 20, 30].map(v => `<option value="${v}" ${v === s.expiry ? 'selected' : ''}>${v} minutes</option>`).join('')}</select></div>
     <div class="field"><label for="cutoff">Stop offering a slot when it starts in less than</label><select id="cutoff" data-change="cutoff">${[10, 20, 30, 60].map(v => `<option value="${v}" ${v === s.cutoff ? 'selected' : ''}>${v} minutes</option>`).join('')}</select></div></div></section>
   <section class="card"><div class="card-head"><h2>SMS text</h2></div><div class="card-body form">
-    <label for="tpl">Message template</label><textarea id="tpl" rows="5" data-change="tpl">${esc(s.template)}</textarea>
-    <p class="note">Variables: {clinic} {service} {time} {doctor} {link} {minutes}</p>
-    <div class="section-title" style="padding-left:0">Preview</div><div class="sms">${esc(s.template.replace('{clinic}', CLINIC).replace('{service}', ex.service).replace('{time}', fmt(ex.start)).replace('{doctor}', ex.doc).replace('{link}', 'openslot.app/o/123').replace('{minutes}', s.expiry))}</div></div></section></div>
+    <label for="tpl" style="font-weight:600;font-size:13px">Message template</label><textarea id="tpl" rows="5" data-change="tpl">${esc(s.template)}</textarea>
+    <p class="note">Variables: {clinic} {service} {time} {doctor} {link} {minutes}. Keep {link} so patients can answer.</p>
+    <div class="section-title" style="padding-left:0">Preview</div><div class="sms">${esc(s.template.replace('{clinic}', OS.clinic()).replace('{service}', ex.service).replace('{time}', fmt(ex.start)).replace('{doctor}', ex.doc).replace('{link}', 'openslot.app/o/123').replace('{minutes}', s.expiry))}</div></div></section></div>
   <section class="card" style="margin-top:20px"><div class="card-head"><h2>Data protection</h2></div><div class="card-body"><ul class="plain">
     <li>Offers are only sent to patients who gave SMS consent. The date of consent is stored.</li>
     <li>Only the data needed to match slots is stored: name, phone, treatment, availability.</li>
     <li>Patients can download their data and leave the waiting list in their own app.</li>
-    <li>Every action is written to the audit log.</li></ul>
-</div></section>`;
+    <li>Every action is written to the audit log.</li></ul></div></section>`;
+  }
+  return `<div class="page-head"><div><h1>Settings</h1><p>Set up your clinic. Changes apply to everyone straight away.</p></div></div>
+  <section class="card setup"><div class="setup-top"><strong>Setup ${done} of ${checks.length} complete</strong><div class="progress"><i style="width:${Math.round(100 * done / checks.length)}%"></i></div></div>
+    <div class="setup-items">${checks.map(([l, ok, t]) => `<button type="button" class="setup-item ${ok ? 'ok' : ''}" data-action="settab" data-t="${t}"><span class="sd">${ok ? '✓' : '!'}</span>${l}</button>`).join('')}</div></section>
+  <div class="tabs" role="tablist" aria-label="Settings">${tabs.map(([k, l]) => `<button type="button" role="tab" data-action="settab" data-t="${k}" aria-selected="${tab === k}">${l}</button>`).join('')}</div>
+  ${body}`;
 }
 function viewAudit() {
   const rows = S().audit.slice().reverse().map(a => `<tr><td class="dim nowrap">Tue ${esc(a.t)}</td><td class="nowrap">${esc(a.actor)}</td><td>${esc(a.action)}</td></tr>`).join('');
@@ -314,11 +369,11 @@ function tour() {
     { t: 'Openslot texts the best match', why: 'No staff action. Open the slot to see who is next and why, and the SMS that went out.', done: any(s => s.offers.length),
       act: '<button class="btn small" data-action="tour-select4">Show the slot</button>' },
     { t: 'The patient answers on their phone', why: 'Open the patient app as Anna Berger, read the offer, tap Take this appointment. Use the QR code in Demo tools to do it on a real phone.', done: any(s => s.offers.some(o => o.state === 'accepted' || o.state === 'declined')),
-      act: `<a class="btn small" href="${OS.link('patient.html')}&as=1" target="_blank" rel="noopener">Open patient app as Anna</a>` },
+      act: `<a class="btn small" href="${OS.link('patient.html')}${OS.qs() ? '&' : '?'}as=1" target="_blank" rel="noopener">Open patient app as Anna</a>` },
     { t: 'The slot turns green', why: 'Refilled in minutes, nobody phoned around. Check the audit log to see who did what.', done: any(s => s.status === 'refilled'), act: '' },
     { t: 'Show an offer nobody answers', why: 'Cancel Karl Steiner\'s 13:00 slot, then move the clock 15 minutes. The offer expires and the next patient is contacted automatically.', done: any(s => s.offers.some(o => o.state === 'expired')),
       act: (s6.status === 'booked' ? '<button class="btn small" data-action="tour-cancel6">Cancel the 13:00 slot</button>' : '') + '<button class="btn small" data-action="advance" data-m="15">Move 15 min</button>' },
-    { t: 'Show the numbers', why: 'Recovery rate, time to refill, acceptance rate, staff time saved. These are the success metrics of the pitch.', done: false, act: '<a class="btn small" href="#/recovery" data-action="tour-close">Open Recovery</a>' },
+    { t: 'Show the numbers', why: 'Recovery rate, time to refill, acceptance rate, staff time saved. These are the success metrics of the pitch.', done: false, act: `<a class="btn small" href="${pathFor('recovery')}" data-nav="recovery" data-close="tour">Open Recovery</a>` },
   ];
   const n = steps.filter(x => x.done).length;
   return `<div class="scrim" data-action="tour"></div><aside class="drawer small" role="dialog" aria-label="Pitch walkthrough"><div class="drawer-head"><div><h2>Pitch walkthrough</h2><p class="dim">${n} of ${steps.length - 1} steps done. Steps tick off by themselves.</p></div><button class="btn ghost small" data-action="tour">Close</button></div>
@@ -343,14 +398,21 @@ function tools() {
 
 /* ---------- render ---------- */
 const ROUTES = { today: viewToday, waiting: viewWaiting, messages: viewMessages, rules: viewRules, recovery: viewRecovery, settings: viewSettings, audit: viewAudit };
-const route = () => (location.hash.replace('#/', '') || 'today');
+const route = () => KEYOF[OS.route()[0]] || 'today';
+function go(k, replace) {
+  const key = SLUG[k] ? k : (KEYOF[k] || 'today'), u = pathFor(key);
+  if (location.pathname + location.search + location.hash !== u) history[replace ? 'replaceState' : 'pushState'](null, '', u);
+  ui.drawer = null; ui.more = false; ui.menu = null; render(); if (!replace) window.scrollTo(0, 0);
+}
+function afterLogin() { const seg = OS.route()[0]; go(KEYOF[seg] ? KEYOF[seg] : 'today', true); }
 let prevOpen = {}, prevSig = null;
 function render() {
   const app = $('#app');
-  if (!session) { app.innerHTML = loginView(); return; }
+  if (!session) { document.title = 'Sign in · Openslot'; app.innerHTML = loginView(); return; }
   let r = ROUTES[route()] ? route() : 'today';
   if (r === 'settings' && !can(role(), 'settings')) r = 'today';
   if (r === 'audit' && !can(role(), 'audit')) r = 'today';
+  document.title = TITLES[r] + ' · Openslot';
   const active = document.activeElement, keepId = active && (active.id === 'search' || active.id === 'gsearch') ? active.id : null, keep = keepId ? active.selectionStart : null;
   const body = skeleton() ? '<div class="skeleton" style="height:60px;width:50%"></div><div class="skeleton"></div><div class="skeleton" style="height:320px"></div>' : ROUTES[r]();
   app.innerHTML = shell(body, r);
@@ -364,12 +426,15 @@ function render() {
   if (keep !== null) { const el = $('#' + keepId); if (el) { el.focus(); el.setSelectionRange(keep, keep); } }
 }
 OS.onChange(render);
-window.addEventListener('hashchange', () => { ui.drawer = null; ui.more = false; ui.menu = null; render(); window.scrollTo(0, 0); });
+window.addEventListener('popstate', () => { ui.drawer = null; ui.more = false; ui.menu = null; render(); });
+window.addEventListener('hashchange', () => { const h = location.hash.replace(/^#\/?/, ''); if (h) go(h, true); });
 
 document.addEventListener('click', e => {
+  const nav = e.target.closest('a[data-nav]');
+  if (nav && e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey) { e.preventDefault(); if (nav.dataset.close === 'tour') ui.tour = false; go(nav.dataset.nav); return; }
   const b = e.target.closest('[data-action]'); if (!b) return;
   const a = b.dataset.action, d = b.dataset, who = session ? session.name + ' (' + ROLE_LABEL[role()] + ')' : '';
-  if (a === 'login') { const acct = ACCOUNTS.find(x => x.role === d.role); session = acct; sessionStorage.setItem('openslot-session', JSON.stringify(acct)); location.hash = '#/today'; }
+  if (a === 'login') { const acct = ACCOUNTS.find(x => x.role === d.role); session = acct; sessionStorage.setItem('openslot-session', JSON.stringify(acct)); afterLogin(); return; }
   else if (a === 'logout') { ui.menu = null; session = null; sessionStorage.removeItem('openslot-session'); }
   else if (a === 'select') ui.selected = +d.slot;
   else if (a === 'cancel') { const reason = ($('#reason') || {}).value; OS.cancel(d.slot, 'reception', reason, who); return; }
@@ -383,6 +448,8 @@ document.addEventListener('click', e => {
   else if (a === 'add-open') ui.addOpen = true;
   else if (a === 'add-close') ui.addOpen = false;
   else if (a === 'move-rule') { OS.update(st => { const i = +d.i, j = i + +d.dir; [st.rules[i], st.rules[j]] = [st.rules[j], st.rules[i]]; st.approval = { by: session.name, at: 'just now' }; st.audit.push({ t: fmt(st.clock), actor: who, action: 'Changed the order of allocation rules' }); }); return; }
+  else if (a === 'settab') ui.setTab = d.t;
+  else if (a === 'prac-day') { OS.update(st => { const q = st.practitioners.find(x => x.id === +d.p); q.days[+d.d] = !q.days[+d.d]; st.audit.push({ t: fmt(st.clock), actor: who, action: `${q.name} ${q.days[+d.d] ? 'now works' : 'no longer works'} on ${DAYS[+d.d]}` }); }); return; }
   else if (a === 'menu') ui.menu = ui.menu === d.m ? null : d.m;
   else if (a === 'menu-close') ui.menu = null;
   else if (a === 'tour') { ui.tour = !ui.tour; ui.more = false; ui.menu = null; }
@@ -390,13 +457,13 @@ document.addEventListener('click', e => {
   else if (a === 'theme') OS.theme.set(d.t);
   else if (a === 'accent') OS.accent.set(d.t);
   else if (a === 'tour-close') ui.tour = false;
-  else if (a === 'tour-cancel4') { OS.cancel(4, 'patient', 'Feeling unwell', 'Oskar Lindner (patient app)'); ui.selected = 4; location.hash = '#/today'; return; }
+  else if (a === 'tour-cancel4') { OS.cancel(4, 'patient', 'Feeling unwell', 'Oskar Lindner (patient app)'); ui.selected = 4; go('today'); return; }
   else if (a === 'tour-cancel6') { OS.cancel(6, 'reception', 'Patient called', session.name + ' (' + ROLE_LABEL[role()] + ')'); ui.selected = 6; return; }
-  else if (a === 'tour-select4') { ui.selected = 4; location.hash = '#/today'; }
+  else if (a === 'tour-select4') { ui.selected = 4; go('today'); return; }
   else if (a === 'tools') { ui.tools = !ui.tools; ui.more = false; ui.menu = null; }
   else if (a === 'new-room') { OS.newRoom(); return; }
   else if (a === 'advance') { OS.advance(+d.m); return; }
-  else if (a === 'sim-cancel') { OS.cancel(4, 'patient', 'Feeling unwell', 'Oskar Lindner (patient app)'); ui.tools = false; ui.selected = 4; location.hash = '#/today'; render(); return; }
+  else if (a === 'sim-cancel') { OS.cancel(4, 'patient', 'Feeling unwell', 'Oskar Lindner (patient app)'); ui.tools = false; ui.selected = 4; go('today'); return; }
   else if (a === 'reset') { OS.reset(); ui.selected = null; ui.drawer = null; ui.tools = false; toast('Demo data reset'); return; }
   else if (a === 'csv') { const blob = new Blob([OS.csvAudit()], { type: 'text/csv' }), l = document.createElement('a'); l.href = URL.createObjectURL(blob); l.download = 'openslot-audit-log.csv'; l.click(); }
   render();
@@ -408,7 +475,18 @@ document.addEventListener('submit', e => {
     const acct = ACCOUNTS.find(x => x.email === em);
     if (!em || !pw) { err.textContent = 'Enter your email and password.'; err.hidden = false; return; }
     if (!acct) { err.textContent = 'We could not find that account. This is a demo: open Demo access below and pick a role.'; err.hidden = false; return; }
-    session = acct; sessionStorage.setItem('openslot-session', JSON.stringify(acct)); location.hash = '#/today'; render(); return;
+    session = acct; sessionStorage.setItem('openslot-session', JSON.stringify(acct)); afterLogin(); return;
+  }
+  if (e.target.id === 'prac-form') {
+    e.preventDefault(); const name = $('#pn').value.trim(); if (!name) return;
+    OS.update(st => { st.practitioners.push({ id: st.nextId++, name, title: $('#pt').value.trim() || 'Practitioner', days: [true, true, true, true, true] }); st.audit.push({ t: fmt(st.clock), actor: session.name + ' (' + ROLE_LABEL[role()] + ')', action: `Added ${name} to the team` }); });
+    toast(name + ' added to the team'); return;
+  }
+  if (e.target.id === 'svc-form') {
+    e.preventDefault(); const name = $('#sn').value.trim(); if (!name) return;
+    if (S().services.some(x => x.name.toLowerCase() === name.toLowerCase())) { toast('That treatment already exists'); return; }
+    OS.update(st => { st.services.push({ name, duration: +$('#sd').value, active: true }); st.audit.push({ t: fmt(st.clock), actor: session.name + ' (' + ROLE_LABEL[role()] + ')', action: `Added the treatment ${name}` }); });
+    toast(name + ' added'); return;
   }
   if (e.target.id === 'add-form') {
     e.preventDefault();
@@ -427,6 +505,11 @@ document.addEventListener('keydown', e => {
 document.addEventListener('change', e => {
   const c = e.target.dataset.change, who = session ? session.name + ' (' + ROLE_LABEL[role()] + ')' : '';
   if (!c) return;
+  if (c === 'hrs-from' || c === 'hrs-to') {
+    const d = +e.target.dataset.d, h = S().hours[d], from = c === 'hrs-from' ? e.target.value : h.from, to = c === 'hrs-to' ? e.target.value : h.to;
+    if (!from || !to || OS.toMin(to) <= OS.toMin(from)) { toast('Closing time must be after opening time'); return; }
+  }
+  if (c === 'prac-name' || c === 'clinic-name' || c === 'clinic-city') { if (!e.target.value.trim()) { toast('This cannot be empty'); return; } }
   OS.update(st => {
     const log = t => st.audit.push({ t: fmt(st.clock), actor: who, action: t });
     if (c === 'rule') { st.rules[+e.target.dataset.i].on = e.target.checked; st.approval = { by: session.name, at: 'just now' }; log('Switched an allocation rule ' + (e.target.checked ? 'on' : 'off')); }
@@ -436,16 +519,33 @@ document.addEventListener('change', e => {
     if (c === 'expiry') { st.settings.expiry = +e.target.value; log('Offer validity set to ' + e.target.value + ' minutes'); }
     if (c === 'cutoff') { st.settings.cutoff = +e.target.value; log('Offer cut-off set to ' + e.target.value + ' minutes'); }
     if (c === 'tpl') { st.settings.template = e.target.value; log('SMS template changed'); }
+    const di = +e.target.dataset.d, v = e.target.value;
+    if (c === 'clinic-name') { st.clinic.name = v.trim(); log('Clinic name changed to ' + v.trim()); }
+    if (c === 'clinic-city') { st.clinic.city = v.trim(); log('Clinic city changed'); }
+    if (c === 'clinic-phone') { st.clinic.phone = v.trim(); log('Clinic phone changed'); }
+    if (c === 'hrs-open') { st.hours[di].open = e.target.checked; log(`${DAY_FULL[di]} set to ${e.target.checked ? 'open' : 'closed'}`); }
+    if (c === 'hrs-from') { st.hours[di].from = v; log(`${DAY_FULL[di]} opens at ${v}`); }
+    if (c === 'hrs-to') { st.hours[di].to = v; log(`${DAY_FULL[di]} closes at ${v}`); }
+    if (c === 'quiet') { st.settings.quiet = e.target.checked; log('Offers while the clinic is closed: ' + (e.target.checked ? 'wait until opening' : 'sent any time')); }
+    if (c === 'prac-name') { const q = st.practitioners.find(x => x.id === +e.target.dataset.p), old = q.name; q.name = v.trim(); st.slots.forEach(x => { if (x.doc === old) x.doc = q.name; }); log(`Renamed ${old} to ${q.name}`); }
+    if (c === 'prac-title') { const q = st.practitioners.find(x => x.id === +e.target.dataset.p); q.title = v.trim(); log('Changed the role of ' + q.name); }
+    if (c === 'svc-dur') { const q = st.services[+e.target.dataset.i]; q.duration = +v; log(`${q.name} length set to ${v} minutes`); }
+    if (c === 'svc-active') { const q = st.services[+e.target.dataset.i]; q.active = e.target.checked; log(`${q.name} ${q.active ? 'offered' : 'hidden'}`); }
   });
 });
 document.addEventListener('input', e => {
   if (e.target.id === 'search') { ui.search = e.target.value; $('#wl-body').innerHTML = waitRows(); const g = $('#gsearch'); if (g) g.value = ui.search; }
   if (e.target.id === 'gsearch') {
     ui.search = e.target.value;
-    if (route() !== 'waiting') { ui.filter = 'All'; location.hash = '#/waiting'; }
+    if (route() !== 'waiting') { ui.filter = 'All'; go('waiting'); }
     else { $('#wl-body').innerHTML = waitRows(); const f = $('#search'); if (f) f.value = ui.search; }
   }
 });
-if (!location.hash) location.hash = '#/today';
+(function init() {
+  const h = location.hash.replace(/^#\/?/, ''), seg = OS.route()[0];
+  if (h) { go(h, true); return; }
+  const target = KEYOF[seg] ? '/' + OS.room() + '/' + seg : (session ? '/' + OS.room() + '/today' : '/' + OS.room());
+  history.replaceState(null, '', target + OS.qs()); render();
+})();
 render();
 })();

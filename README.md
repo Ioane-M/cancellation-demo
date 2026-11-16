@@ -7,7 +7,7 @@ A working demo of **Openslot**, a cancellation recovery product for independent 
 ## Two apps, one shared backend
 - `index.html` is the **clinic app**. Sign in as Reception, Dentist or Owner.
 - `patient.html` is the **patient app**. Pick a demo patient.
-- Both talk to a **Supabase** database (Postgres in the cloud). A *room* is one shared demo, identified by `?room=abc123` in the link. Open the patient app on your phone with the same room code (Demo tools shows a QR code) and every change appears on every device within about a second.
+- Both talk to a **Supabase** database (Postgres in the cloud). A *room* is one shared demo, identified by the first part of the URL, for example `/abc123/today` (clinic app) and `/abc123/patient` (patient app). Open the patient app on your phone with the same room code (Demo tools shows a QR code) and every change appears on every device within about a second.
 - If Supabase is not reachable, the demo falls back to this browser only (tabs still sync). The top bar shows **Live** or **This browser only**.
 
 ## Design and experience
@@ -49,7 +49,7 @@ Open **Demo access** on the sign-in page to pick a role, then open the **⋯ men
 **Create an account and join the waiting list** (treatment, availability, notice, SMS consent), offer page (the link in the SMS), countdown, accept or decline, cancel own appointment, availability profile, SMS inbox, privacy page with consent, data download and leave-the-list.
 
 ## Run locally
-No build step: open `index.html`, or run `python3 -m http.server` in this folder.
+No build step. Run `node server.mjs` in this folder and open http://localhost:8765 (it applies the same URL rules as `vercel.json`, so `/<room>/today` works locally). Old links with `?room=` and `#/today` still work and are redirected to the clean URL.
 
 ## Deploy on Vercel
 Import the repo on vercel.com, framework preset **Other**, leave build command and output directory empty, deploy. Suggested project name `openslot-demo`.

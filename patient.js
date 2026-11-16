@@ -1,6 +1,7 @@
 (() => {
 'use strict';
-const { esc, fmt, partOf, partName, noticeLabel, DAYS, PARTS, NOTICES, CLINIC } = OS;
+const { esc, fmt, partOf, partName, noticeLabel, DAYS, PARTS, NOTICES } = OS;
+const CLINIC_N = () => OS.clinic();
 const $ = s => document.querySelector(s);
 const S = () => OS.state();
 let pid = null;
@@ -13,7 +14,14 @@ const asParam = new URLSearchParams(location.search).get('as');
 if (asParam && /^\d+$/.test(asParam)) { pid = +asParam; try { sessionStorage.setItem('openslot-patient', pid); } catch (e) { /* ignore */ } }
 const me = () => pid && OS.patientById(pid);
 function toast(msg) { ui.toast = msg; render(); clearTimeout(toast.t); toast.t = setTimeout(() => { ui.toast = null; render(); }, 2400); }
-const route = () => (location.hash.replace('#/', '') || 'home');
+const route = () => OS.route().slice(1).join('/') || 'home';
+const pathFor = r => '/' + OS.room() + '/patient' + (r && r !== 'home' ? '/' + r : '') + OS.qs();
+const TITLES = { home: 'Home', availability: 'Availability', messages: 'Messages', privacy: 'Privacy', offer: 'Appointment offer' };
+function go(r, replace) {
+  const u = pathFor(r);
+  if (location.pathname + location.search + location.hash !== u) history[replace ? 'replaceState' : 'pushState'](null, '', u);
+  ui.menu = null; render(); if (!replace) window.scrollTo(0, 0);
+}
 const myOffers = () => { const out = []; S().slots.forEach(s => s.offers.forEach(o => { if (o.pid === pid) out.push({ s, o }); })); return out.sort((a, b) => b.o.sentAt - a.o.sentAt); };
 
 function loginView() {
@@ -21,7 +29,7 @@ function loginView() {
   const holders = S().patients.filter(p => !p.wl);
   const btn = p => `<button class="acct" data-action="login" data-p="${p.id}"><strong>${esc(p.name)}</strong><span>${p.wl ? 'Wants an earlier ' + esc(p.wl.services[0].toLowerCase()) : 'Appointment today ' + (S().slots.find(s => s.patientId === p.id) ? fmt(S().slots.find(s => s.patientId === p.id).start) : '')}</span></button>`;
   return `<div class="pt-wrap"><div class="pt-login"><div class="login-brand"><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="currentColor"/><path d="M9 16a7 7 0 1 1 7 7" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/></svg><span class="wordmark">Openslot</span></div>
-    <h1>Your appointments at ${CLINIC}</h1><p class="muted">Get offered earlier appointments by SMS. In the real product you open the app from the link in your SMS. In this demo, pick a patient.</p>
+    <h1>Your appointments at ${esc(CLINIC_N())}</h1><p class="muted">Get offered earlier appointments by SMS. Sign in to see your appointment and tell us when you can come.</p>
     <form id="phone-form" class="pt-card" novalidate><label for="ph">Mobile number</label><input id="ph" type="tel" placeholder="+43 660 1234567" autocomplete="tel"><p class="form-err" id="ph-err" role="alert" hidden></p>
       <button class="btn primary big" type="submit" style="margin-top:10px;width:100%">Send me a sign-in link</button></form>
     <form id="new-form" class="pt-card"><h3>New here?</h3><p class="dim">Create an account to join the waiting list.</p><label for="nn">Your name</label><input id="nn" required placeholder="Full name" autocomplete="name">
@@ -40,7 +48,7 @@ function offerCard(s, o, full) {
   if (o.state === 'declined') return `<div class="pt-card"><h3>You declined this offer</h3><p class="dim">${esc(s.service)} at ${fmt(s.start)}. You stay on the waiting list.</p></div>`;
   if (o.state === 'expired') return `<div class="pt-card"><h3>This offer expired</h3><p class="dim">${esc(s.service)} at ${fmt(s.start)} was offered to the next patient. You stay on the waiting list.</p></div>`;
   return `<div class="pt-card offer"><span class="chip info">Earlier appointment available</span><h3>${esc(s.service)} today at ${fmt(s.start)}</h3>
-    <p>with ${esc(s.doc)} at ${CLINIC}, ${s.dur} minutes.</p><div class="countdown"><span>Time left to answer</span><strong>${left} min</strong></div><div class="progress ${left <= 5 ? 'urgent' : ''}" role="progressbar" aria-valuemin="0" aria-valuemax="${o.expiresAt - o.sentAt}" aria-valuenow="${left}"><i style="width:${Math.max(0, Math.min(100, Math.round(100 * left / Math.max(1, o.expiresAt - o.sentAt))))}%"></i></div>
+    <p>with ${esc(s.doc)} at ${esc(CLINIC_N())}, ${s.dur} minutes.</p><div class="countdown"><span>Time left to answer</span><strong>${left} min</strong></div><div class="progress ${left <= 5 ? 'urgent' : ''}" role="progressbar" aria-valuemin="0" aria-valuemax="${o.expiresAt - o.sentAt}" aria-valuenow="${left}"><i style="width:${Math.max(0, Math.min(100, Math.round(100 * left / Math.max(1, o.expiresAt - o.sentAt))))}%"></i></div>
     <div class="pt-actions"><button class="btn primary big" data-action="accept" data-o="${o.id}">Take this appointment</button><button class="btn big" data-action="decline" data-o="${o.id}">No thanks</button></div>
     <p class="note">If you take it, your later appointment (${esc(me().current || 'none')}) is released for other patients.</p></div>`;
 }
@@ -49,7 +57,7 @@ function joinCard() {
   const head = ['<div></div>', ...DAYS.map(d => `<div class="h">${d}</div>`)].join('');
   const body = PARTS.map(pt => `<div class="r">${pt.name}<small>${pt.hours}</small></div>` + DAYS.map((d, i) => `<button type="button" data-action="jt" data-d="${i}" data-k="${pt.k}" aria-pressed="${ui.joinAvail[i][pt.k]}" aria-label="${d} ${pt.name}">${ui.joinAvail[i][pt.k] ? 'Yes' : '–'}</button>`).join('')).join('');
   return `<section class="pt-card"><h3>Get an earlier appointment</h3><p class="dim">Tell us what you need and when you can come. When a slot frees up that fits, we text you.</p>
-    <form id="join-form"><fieldset><legend>Treatment</legend>${OS.SERVICES.map((sv, i) => `<label class="check"><input type="checkbox" name="svc" value="${esc(sv)}" ${i === 0 ? 'checked' : ''}> ${esc(sv)}</label>`).join('')}</fieldset>
+    <form id="join-form"><fieldset><legend>Treatment</legend>${OS.services().map((sv, i) => `<label class="check"><input type="checkbox" name="svc" value="${esc(sv)}" ${i === 0 ? 'checked' : ''}> ${esc(sv)}</label>`).join('')}</fieldset>
       <div class="avail" role="group" aria-label="Availability" style="margin:12px 0">${head}${body}</div>
       <div class="field" style="margin-top:0"><label for="jn">How much notice do you need?</label><select id="jn">${NOTICES.map(n => `<option value="${n.v}" ${n.v === 60 ? 'selected' : ''}>${n.l}</option>`).join('')}</select></div>
       <label class="check consent"><input type="checkbox" id="jc" required> I agree to receive offers by SMS.</label>
@@ -72,7 +80,7 @@ function homeView() {
   if (p.wl && p.wl.status === 'waiting') {
     h += `<section class="pt-card"><h3>Earlier appointment</h3><p>You are on the list for <strong>${p.wl.services.map(esc).join(', ')}</strong> since ${p.wl.wait} days.</p>
       <p class="dim">Current appointment: ${esc(p.current)}</p><div class="kv"><span>You told us you can come on</span><div class="days">${p.wl.avail.map((d, i) => `<span class="${d.M || d.A || d.E ? 'on' : ''}">${DAYS[i]}</span>`).join('')}</div></div>
-      <a class="btn" href="#/availability">Change when I can come</a></section>`;
+      <a class="btn" href="${pathFor('availability')}" data-nav="availability">Change when I can come</a></section>`;
   } else if (p.wl && p.wl.status === 'booked' && !accepted) {
     h += `<section class="pt-card ok"><h3>You moved to an earlier appointment</h3><p>Your later appointment was released.</p></section>`;
   } else if (p.wl && p.wl.status === 'removed') {
@@ -93,7 +101,7 @@ function availabilityView() {
 }
 function messagesView() {
   const msgs = S().outbox.filter(m => m.pid === pid).reverse();
-  return `<h1 class="pt-h">Messages</h1><p class="muted">This is what your phone would show. In the real product these arrive as SMS.</p>` + (msgs.length ? msgs.map(m => `<div class="sms-row"><span class="dim">${esc(m.time)}</span><div class="sms">${esc(m.text)}</div>${m.link ? `<a class="btn small" href="#/${m.link}">Open offer</a>` : ''}</div>`).join('') : '<div class="pt-card"><p class="dim">No messages yet.</p></div>');
+  return `<h1 class="pt-h">Messages</h1><p class="muted">This is what your phone would show. In the real product these arrive as SMS.</p>` + (msgs.length ? msgs.map(m => `<div class="sms-row"><span class="dim">${esc(m.time)}</span><div class="sms">${esc(m.text)}</div>${m.link ? `<a class="btn small" href="${pathFor(m.link)}" data-nav="${m.link}">Open offer</a>` : ''}</div>`).join('') : '<div class="pt-card"><p class="dim">No messages yet.</p></div>');
 }
 function privacyView() {
   const p = me();
@@ -128,17 +136,18 @@ function popover(p) {
     <div class="pop-head"><span class="avatar" aria-hidden="true">${esc(p.name.split(' ').map(x => x[0]).join('').slice(0, 2))}</span><div><strong>${esc(p.name)}</strong><br><span class="dim">${esc(p.phone)}</span></div></div>
     <div class="pop-row col"><span>Appearance</span><div class="seg" role="group" aria-label="Theme">${['auto', 'light', 'dark'].map(t => `<button type="button" data-action="theme" data-t="${t}" aria-pressed="${OS.theme.get() === t}">${t[0].toUpperCase() + t.slice(1)}</button>`).join('')}</div></div>
     <div class="pop-row col"><span>Accent colour</span><div class="seg" role="group" aria-label="Accent colour">${['blue', 'teal'].map(t => `<button type="button" data-action="accent" data-t="${t}" aria-pressed="${OS.accent.get() === t}">${t[0].toUpperCase() + t.slice(1)}</button>`).join('')}</div></div>
-    <a class="pop-item" role="menuitem" href="#/privacy" data-action="menu-close">Privacy and my data</a>
+    <a class="pop-item" role="menuitem" href="${pathFor('privacy')}" data-nav="privacy">Privacy and my data</a>
     <button class="pop-item danger" role="menuitem" data-action="logout">Sign out</button></div>`;
 }
 function render() {
   const app = $('#app');
-  if (!pid || !me()) { app.innerHTML = loginView(); return; }
+  if (!pid || !me()) { document.title = 'Sign in · Openslot'; app.innerHTML = loginView(); return; }
   const r = route(), parts = r.split('/');
+  document.title = (TITLES[parts[0]] || 'Home') + ' · Openslot';
   let body;
   if (parts[0] === 'offer') body = offerPage(parts[1]); else if (parts[0] === 'availability') body = availabilityView(); else if (parts[0] === 'messages') body = messagesView(); else if (parts[0] === 'privacy') body = privacyView(); else body = homeView();
   const p = me(), unread = S().outbox.filter(m => m.pid === pid).length;
-  const tab = (k, l, d) => `<a href="#/${k}" ${(parts[0] === k || (k === 'home' && !['availability', 'messages', 'privacy'].includes(parts[0]))) ? 'aria-current="page"' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>${l}</a>`;
+  const tab = (k, l, d) => `<a href="${pathFor(k)}" data-nav="${k}" ${(parts[0] === k || (k === 'home' && !['availability', 'messages', 'privacy'].includes(parts[0]))) ? 'aria-current="page"' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>${l}</a>`;
   app.innerHTML = `<div class="pt-wrap"><header class="pt-top"><div class="brand"><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="currentColor"/><path d="M9 16a7 7 0 1 1 7 7" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/></svg><span class="wordmark">Openslot</span></div>
     <div class="topbar-right"><button class="icon-btn" data-action="menu" data-m="demo" aria-label="Demo menu" aria-haspopup="menu" aria-expanded="${ui.menu === 'demo'}" title="Demo menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01" stroke-width="3"/></svg></button>
       <button class="avatar-btn" data-action="menu" data-m="user" aria-label="Account menu" aria-haspopup="menu" aria-expanded="${ui.menu === 'user'}"><span class="avatar" aria-hidden="true">${esc(p.name.split(' ').map(x => x[0]).join('').slice(0, 2))}</span></button></div></header>
@@ -151,12 +160,15 @@ function render() {
     ${ui.toast ? `<div class="toast" role="status">${esc(ui.toast)}</div>` : ''}`;
 }
 OS.onChange(render);
-window.addEventListener('hashchange', () => { ui.menu = null; render(); window.scrollTo(0, 0); });
+window.addEventListener('popstate', () => { ui.menu = null; render(); });
+window.addEventListener('hashchange', () => { const h = location.hash.replace(/^#\/?/, ''); if (h) go(h, true); });
 document.addEventListener('click', e => {
+  const nav = e.target.closest('a[data-nav]');
+  if (nav && e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey) { e.preventDefault(); go(nav.dataset.nav); return; }
   const b = e.target.closest('[data-action]'); if (!b) return; const a = b.dataset.action, d = b.dataset;
   const name = me() ? me().name + ' (patient app)' : '';
-  if (a === 'login') { pid = +d.p; sessionStorage.setItem('openslot-patient', pid); location.hash = '#/' + (d.go || 'home'); }
-  else if (a === 'logout') { ui.menu = null; pid = null; sessionStorage.removeItem('openslot-patient'); location.hash = '#/home'; }
+  if (a === 'login') { pid = +d.p; sessionStorage.setItem('openslot-patient', pid); go(d.go || 'home'); return; }
+  else if (a === 'logout') { ui.menu = null; pid = null; sessionStorage.removeItem('openslot-patient'); go('home'); return; }
   else if (a === 'accept' || a === 'decline') {
     const res = OS.respond(d.o, a, name);
     if (!res.ok) toast(res.why); else toast(a === 'accept' ? 'You are booked. See you soon.' : 'Thanks, you stay on the list.');
@@ -194,7 +206,7 @@ document.addEventListener('submit', e => {
   if (e.target.id === 'new-form') {
     e.preventDefault(); const name = $('#nn').value.trim(); if (!name) return;
     OS.update(st => { const id = st.nextId++; pid = id; st.patients.push({ id, name, phone: '+43 660 ••• ' + String(100 + id).slice(-3), consent: { sms: true, at: 'today' }, appt: null, current: null, wl: null }); st.audit.push({ t: fmt(st.clock), actor: name + ' (patient app)', action: 'Created an account and gave SMS consent' }); });
-    try { sessionStorage.setItem('openslot-patient', pid); } catch (err) { /* ignore */ } location.hash = '#/home'; toast('Welcome, ' + name.split(' ')[0]); render();
+    try { sessionStorage.setItem('openslot-patient', pid); } catch (err) { /* ignore */ } go('home'); toast('Welcome, ' + name.split(' ')[0]);
   }
   if (e.target.id === 'join-form') {
     e.preventDefault(); const svc = [...document.querySelectorAll('input[name=svc]:checked')].map(x => x.value); if (!svc.length) { toast('Pick at least one treatment'); return; }
@@ -203,6 +215,10 @@ document.addEventListener('submit', e => {
   }
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') { ui.confirm = null; ui.tools = false; ui.menu = null; render(); } });
-if (!location.hash) location.hash = '#/home';
+(function init() {
+  const h = location.hash.replace(/^#\/?/, '');
+  if (h) { go(h, true); return; }
+  history.replaceState(null, '', pathFor(route())); render();
+})();
 render();
 })();

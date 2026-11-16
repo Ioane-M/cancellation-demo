@@ -25,6 +25,22 @@ const noticeLabel = v => (NOTICES.find(n => n.v === v) || { l: v + ' min' }).l;
 const parseAvail = s => s.split('|').map(d => ({ M: d.includes('M'), A: d.includes('A'), E: d.includes('E') }));
 
 /* ---------- seed ---------- */
+const toMin = t => { const m = /^(\d{1,2}):(\d{2})$/.exec(t || ''); return m ? (+m[1]) * 60 + (+m[2]) : 0; };
+const defaultHours = () => ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d, i) => ({ open: i < 5, from: '08:00', to: '17:00' }));
+const defaultPractitioners = () => [{ id: 1, name: 'Dr. Weiss', title: 'Dentist, clinical lead', days: [true, true, true, true, true] }, { id: 2, name: 'Dr. Okafor', title: 'Dentist, practice owner', days: [true, true, true, true, true] }];
+const defaultServices = () => SERVICES.map(n => ({ name: n, duration: DURATION[n], active: true }));
+function norm(st) {
+  if (!st || typeof st !== 'object') return st;
+  if (!st.clinic) st.clinic = { name: 'Linden Dental Practice', city: 'Vienna', phone: '+43 1 555 0100' };
+  if (!st.hours || st.hours.length !== 7) st.hours = defaultHours();
+  if (!st.practitioners) st.practitioners = defaultPractitioners();
+  if (!st.services) st.services = defaultServices();
+  if (st.settings && st.settings.quiet === undefined) st.settings.quiet = true;
+  return st;
+}
+const clinicName = () => S.clinic.name;
+const isOpen = m => { const h = S.hours[TODAY_IDX]; return !!h.open && m >= toMin(h.from) && m < toMin(h.to); };
+const nextOpenAt = () => { const h = S.hours[TODAY_IDX]; return h.open ? toMin(h.from) : null; };
 function seed() {
   const W = (id, name, services, wait, notice, av, flag, offers, current) => ({
     id, name, phone: '+43 660 ••• ' + String(100 + id * 7).slice(-3), consent: { sms: true, at: '2026-09-' + String(10 + id).padStart(2, '0') },
@@ -66,7 +82,9 @@ function seed() {
       { id: 'fair', on: true, title: 'Fewest recent offers first', desc: 'Patients who have received fewer offers recently go first, so nobody is contacted over and over.' },
     ],
     approval: { by: 'Dr. Weiss', at: '4 Nov 2026' },
-    settings: { autoOffer: true, expiry: 15, cutoff: 20, template: '{clinic}: a {service} slot is free today at {time} with {doctor}. Open {link} to take it or decline. Offer valid for {minutes} minutes.' },
+    clinic: { name: 'Linden Dental Practice', city: 'Vienna', phone: '+43 1 555 0100' },
+    hours: defaultHours(), practitioners: defaultPractitioners(), services: defaultServices(),
+    settings: { autoOffer: true, quiet: true, expiry: 15, cutoff: 20, template: '{clinic}: a {service} slot is free today at {time} with {doctor}. Open {link} to take it or decline. Offer valid for {minutes} minutes.' },
     outbox: [], audit: [{ t: '09:10', actor: 'System', action: 'Demo day started' }],
     base: { cancelled: 6, refilled: 2, unfilled: 2, minutes: 148 },
     history: [{ w: 'Wk 43', c: 19, r: 8 }, { w: 'Wk 44', c: 22, r: 12 }, { w: 'Wk 45', c: 17, r: 9 }, { w: 'Wk 46', c: 21, r: 11 }],
@@ -85,25 +103,32 @@ function seed() {
    working locally and syncs between tabs of the same browser. */
 const params = new URLSearchParams(location.search);
 function makeRoom() { const c = 'abcdefghjkmnpqrstuvwxyz23456789'; let r = ''; for (let i = 0; i < 6; i++) r += c[Math.floor(Math.random() * c.length)]; return r; }
-let ROOM = (params.get('room') || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);
+/* Clean URLs: /<room>/today for the clinic app, /<room>/patient/<page> for the patient app. */
+const RESERVED = ['patient', 'index', 'docs', 'vendor', 'supabase', 'config', 'core', 'staff', 'styles', 'favicon'];
+function pathParts() {
+  const seg = location.pathname.split('/').filter(Boolean);
+  if (seg.length && /^[a-z0-9]{3,20}$/.test(seg[0]) && !RESERVED.includes(seg[0])) return { room: seg[0], rest: seg.slice(1) };
+  return { room: null, rest: seg.filter(x => !/\.[a-z]+$/i.test(x)) };
+}
+let ROOM = pathParts().room || (params.get('room') || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);
 try { if (!ROOM) ROOM = localStorage.getItem('openslot-room') || ''; } catch (e) { /* storage blocked */ }
-if (!/^[a-z0-9]{3,20}$/.test(ROOM)) ROOM = makeRoom();
+if (!/^[a-z0-9]{3,20}$/.test(ROOM) || RESERVED.includes(ROOM)) ROOM = makeRoom();
 try { localStorage.setItem('openslot-room', ROOM); } catch (e) { /* ignore */ }
-try { const u = new URL(location.href); if (u.searchParams.get('room') !== ROOM) { u.searchParams.set('room', ROOM); history.replaceState(null, '', u); } } catch (e) { /* ignore */ }
 const KEY_ROOM = KEY + '-' + ROOM;
 
 const CFG = window.OS_CONFIG || {};
 let API = CFG.url || '';
 const apiOverride = params.get('api'); // only for local testing
-if (apiOverride && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(apiOverride)) API = apiOverride;
+let apiOverrideOk = false;
+if (apiOverride && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(apiOverride)) { API = apiOverride; apiOverrideOk = true; }
 let online = false, connecting = !!(CFG.url && CFG.key), version = 0, pending = [], pushing = false, lastError = '';
 
 const listeners = [];
 function loadLocal() { try { const s = JSON.parse(localStorage.getItem(KEY_ROOM)); return s && s.v === 2 ? s : null; } catch (e) { return null; } }
 function saveLocal() { try { localStorage.setItem(KEY_ROOM, JSON.stringify(S)); } catch (e) { /* storage blocked, demo keeps working in memory */ } }
-let S = loadLocal() || seed();
+let S = norm(loadLocal() || seed());
 function changed() { listeners.forEach(f => f()); }
-window.addEventListener('storage', e => { if (!online && e.key === KEY_ROOM) { S = loadLocal() || S; changed(); } });
+window.addEventListener('storage', e => { if (!online && e.key === KEY_ROOM) { S = norm(loadLocal() || S); changed(); } });
 
 async function rpc(name, body) {
   const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 8000);
@@ -129,7 +154,7 @@ async function push() {
       const res = (await rpc('put_room_state', { p_room: ROOM, p_expected: version, p_state: S }))[0];
       if (res.ok) { version = res.version; pending = pending.slice(n); }
       else { // somebody else changed the room first: take their version and apply our unsent changes on top
-        S = res.state; version = res.version;
+        S = norm(res.state); version = res.version;
         pending.forEach(f => { try { f(S); } catch (e) { /* ignore */ } });
         processExpiries(); saveLocal(); changed();
       }
@@ -141,7 +166,7 @@ async function poll() {
   if (online && !pushing && !pending.length) {
     try {
       const head = await getRow('version');
-      if (head && head.version > version) { const row = await getRow('state,version'); if (row && row.version > version && !pending.length) { S = row.state; version = row.version; saveLocal(); changed(); } }
+      if (head && head.version > version) { const row = await getRow('state,version'); if (row && row.version > version && !pending.length) { S = norm(row.state); version = row.version; saveLocal(); changed(); } }
     } catch (e) { /* try again next time */ }
   }
   setTimeout(poll, document.hidden ? 5000 : 1200);
@@ -150,7 +175,7 @@ const ready = (async () => {
   if (!API || !CFG.key) { connecting = false; return; }
   try {
     const rows = await rpc('get_or_create_room', { p_room: ROOM, p_seed: S });
-    S = rows[0].state; version = rows[0].version; online = true; saveLocal(); changed();
+    S = norm(rows[0].state); version = rows[0].version; online = true; saveLocal(); changed();
     poll();
     rpc('purge_old_rooms', {}).catch(() => {});
   } catch (e) { online = false; lastError = String(e.message || e); }
@@ -158,7 +183,7 @@ const ready = (async () => {
 })();
 
 function mutate(fn) {
-  const fresh = !online ? loadLocal() : null; if (fresh) S = fresh;
+  const fresh = !online ? loadLocal() : null; if (fresh) S = norm(fresh);
   const r = fn(S); processExpiries(); saveLocal(); changed();
   if (online) { pending.push(fn); push(); }
   return r;
@@ -208,7 +233,7 @@ const pendingOffer = slot => slot.offers.find(o => o.state === 'pending');
 /* ---------- messages ---------- */
 function renderTemplate(slot, link) {
   return S.settings.template
-    .replace('{clinic}', CLINIC).replace('{service}', slot.service).replace('{time}', fmt(slot.start))
+    .replace('{clinic}', clinicName()).replace('{service}', slot.service).replace('{time}', fmt(slot.start))
     .replace('{doctor}', slot.doc).replace('{link}', link).replace('{minutes}', S.settings.expiry);
 }
 function sms(pid, kind, text, link) { S.outbox.push({ id: uid(), pid, time: fmt(S.clock), kind, text, link: link || null }); }
@@ -220,7 +245,7 @@ function doCancel(slotId, by, reason, actor) {
   s.status = 'cancelled'; s.cancelledAt = S.clock; s.cancelledBy = by; s.reason = reason || null;
   const p = patientById(s.patientId); if (p) p.appt = null;
   log(actor, `Cancellation logged for ${s.service} at ${fmt(s.start)} (${by === 'patient' ? 'by the patient in the app' : 'by reception'}${reason ? ', reason: ' + reason : ''})`);
-  if (p) sms(p.id, 'confirm', `${CLINIC}: your ${s.service} appointment today at ${fmt(s.start)} was cancelled. You can book a new one in the app.`);
+  if (p) sms(p.id, 'confirm', `${clinicName()}: your ${s.service} appointment today at ${fmt(s.start)} was cancelled. You can book a new one in the app.`);
   if (S.settings.autoOffer) offerNext(s, 'Openslot');
 }
 function offerNext(slot, actor) {
@@ -228,6 +253,8 @@ function offerNext(slot, actor) {
   if (slot.start - S.clock < S.settings.cutoff) return closeUnfilled(slot, 'Too close to the start time (offers stop ' + S.settings.cutoff + ' min before)');
   const c = candidates(slot);
   if (!c.eligible.length) return closeUnfilled(slot, 'No eligible patient left');
+  if (S.settings.quiet && !isOpen(S.clock)) { if (!slot.queued) { slot.queued = true; log('Openslot', `Offer for ${slot.service} at ${fmt(slot.start)} is waiting until the clinic opens`); } return; }
+  slot.queued = false;
   doOffer(slot, c.eligible[0].p.id, actor);
 }
 function doOffer(slot, pid, actor) {
@@ -240,7 +267,7 @@ function doOffer(slot, pid, actor) {
 }
 function closeUnfilled(slot, why) {
   if (slot.status !== 'cancelled') return;
-  slot.status = 'unfilled';
+  slot.status = 'unfilled'; slot.queued = false;
   log('Openslot', `${slot.service} at ${fmt(slot.start)} stays unfilled. ${why}`);
 }
 function doRespond(offerId, answer, actor) {
@@ -255,7 +282,7 @@ function doRespond(offerId, answer, actor) {
     if (answer === 'accept') {
       o.state = 'accepted'; slot.status = 'refilled'; slot.filledBy = p.id; slot.filledAt = S.clock;
       p.wl.status = 'booked'; p.appt = slot.id;
-      sms(p.id, 'confirm', `${CLINIC}: you are booked for ${slot.service} today at ${fmt(slot.start)} with ${slot.doc}. Your later appointment (${p.current}) was released.`);
+      sms(p.id, 'confirm', `${clinicName()}: you are booked for ${slot.service} today at ${fmt(slot.start)} with ${slot.doc}. Your later appointment (${p.current}) was released.`);
       log(actor, `${p.name} accepted the offer for ${slot.service} at ${fmt(slot.start)}. Slot refilled`);
     } else {
       o.state = 'declined'; p.wl.offers++;
@@ -275,6 +302,7 @@ function processExpiries() {
         if (S.settings.autoOffer) offerNext(slot, 'Openslot');
       }
     }
+    if (slot.status === 'cancelled' && slot.queued && S.settings.autoOffer && isOpen(S.clock)) offerNext(slot, 'Openslot');
     if (slot.status === 'cancelled' && !pendingOffer(slot) && S.clock >= slot.start) closeUnfilled(slot, 'The slot start time has passed');
   }
 }
@@ -296,7 +324,8 @@ function offerLog() {
 
 /* ---------- public api ---------- */
 const api = {
-  DAYS, TODAY_IDX, PARTS, SERVICES, NOTICES, CLINIC, STAFF_MIN_PER_REFILL, DURATION,
+  DAYS, TODAY_IDX, PARTS, NOTICES, STAFF_MIN_PER_REFILL, DURATION, toMin, isOpen, nextOpenAt,
+  clinic: clinicName, services: () => S.services.filter(x => x.active).map(x => x.name),
   esc, fmt, partOf, partName, noticeLabel, can,
   state, onChange, slotById, patientById, candidates, pendingOffer, stats, offerLog,
   cancel: (id, by, reason, actor) => mutate(() => doCancel(id, by, reason, actor)),
@@ -311,10 +340,11 @@ const api = {
   accent: { get: () => { try { return localStorage.getItem('openslot-accent') || 'blue'; } catch (e) { return 'blue'; } },
     set: t => { try { localStorage.setItem('openslot-accent', t); } catch (e) { /* ignore */ } if (t === 'blue') delete document.documentElement.dataset.accent; else document.documentElement.dataset.accent = t; } },
   ics: slot => { const d = n => String(n).padStart(2, '0'), f = m => '20261117T' + d(Math.floor(m / 60)) + d(m % 60) + '00';
-    return 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Openslot demo//EN\r\nBEGIN:VEVENT\r\nUID:openslot-' + slot.id + '-' + ROOM + '@demo\r\nDTSTAMP:20261117T091000Z\r\nDTSTART;TZID=Europe/Vienna:' + f(slot.start) + '\r\nDTEND;TZID=Europe/Vienna:' + f(slot.start + slot.dur) + '\r\nSUMMARY:' + slot.service + ' at ' + CLINIC + '\r\nDESCRIPTION:Booked through Openslot (demo, fictional).\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n'; },
+    return 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Openslot demo//EN\r\nBEGIN:VEVENT\r\nUID:openslot-' + slot.id + '-' + ROOM + '@demo\r\nDTSTAMP:20261117T091000Z\r\nDTSTART;TZID=Europe/Vienna:' + f(slot.start) + '\r\nDTEND;TZID=Europe/Vienna:' + f(slot.start + slot.dur) + '\r\nSUMMARY:' + slot.service + ' at ' + clinicName() + '\r\nDESCRIPTION:Booked through Openslot (demo, fictional).\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n'; },
   room: () => ROOM,
-  link: page => location.origin + location.pathname.replace(/[^/]*$/, '') + page + '?room=' + ROOM,
-  newRoom: () => { const r = makeRoom(); try { localStorage.setItem('openslot-room', r); } catch (e) { /* ignore */ } location.href = location.pathname + '?room=' + r; },
+  route: () => pathParts().rest, qs: () => (apiOverrideOk ? '?api=' + encodeURIComponent(API) : ''),
+  link: page => location.origin + '/' + ROOM + (String(page).indexOf('patient') === 0 ? '/patient' : '') + (apiOverrideOk ? '?api=' + encodeURIComponent(API) : ''),
+  newRoom: () => { const r = makeRoom(); try { localStorage.setItem('openslot-room', r); } catch (e) { /* ignore */ } location.href = '/' + r + (apiOverrideOk ? '?api=' + encodeURIComponent(API) : ''); },
   csvAudit: () => 'time,actor,action\n' + S.audit.map(a => [a.t, a.actor, '"' + a.action.replace(/"/g, '""') + '"'].join(',')).join('\n'),
 };
 return api;

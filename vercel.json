@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    { "source": "/:room/patient", "destination": "/patient.html" },
+    { "source": "/:room/patient/:path*", "destination": "/patient.html" },
+    { "source": "/:room", "destination": "/index.html" },
+    { "source": "/:room/:path*", "destination": "/index.html" }
+  ]
+}

@@ -472,3 +472,33 @@ details.demo-access summary::-webkit-details-marker{display:none}
   .avatar-btn .user-t{display:none}
   .popover{right:10px;top:60px}
 }
+
+/* ---------- settings: tabs, hours, team, setup ---------- */
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:20px 0;overflow-x:auto}
+.tabs button{background:none;border:0;border-bottom:2px solid transparent;padding:10px 14px;font-weight:600;color:var(--muted);cursor:pointer;white-space:nowrap;margin-bottom:-1px}
+.tabs button:hover{color:var(--ink)}
+.tabs button[aria-selected="true"]{color:var(--brand-strong);border-bottom-color:var(--brand)}
+.setup{padding:16px 18px}
+.setup-top{display:flex;align-items:center;gap:16px;margin-bottom:12px;flex-wrap:wrap}
+.setup-top .progress{flex:1;min-width:140px;margin:0}
+.setup-items{display:flex;gap:8px;flex-wrap:wrap}
+.setup-item{display:inline-flex;gap:8px;align-items:center;padding:6px 12px;border-radius:999px;border:1px solid var(--line-strong);background:var(--surface);cursor:pointer;font-weight:500}
+.setup-item .sd{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700;background:var(--warn-soft);color:var(--warn)}
+.setup-item.ok .sd{background:var(--ok-soft);color:var(--ok)}
+.setup-item:hover{background:var(--surface-3)}
+.hrow{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 18px;border-top:1px solid var(--line);flex-wrap:wrap}
+.hrow:first-of-type{border-top:0}
+.hrow.closed strong{color:var(--muted)}
+.hours-inputs{display:flex;align-items:center;gap:8px}
+.hours-inputs input{width:auto;padding:7px 8px}
+.prac{padding:16px 18px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
+.prac:first-of-type{border-top:0}
+.prac-main{display:flex;gap:12px;align-items:center}
+.prac-fields{flex:1;display:flex;gap:8px;flex-wrap:wrap}
+.prac-fields input{flex:1;min-width:140px}
+.prac-days{display:flex;gap:6px;flex-wrap:wrap}
+.prac-days button{padding:5px 11px;border-radius:999px;border:1px solid var(--line-strong);background:var(--surface);cursor:pointer;font-weight:600;color:var(--muted);font-size:13px}
+.prac-days button[aria-pressed="true"]{background:var(--brand-soft);border-color:var(--brand);color:var(--brand-strong)}
+.closed-band{position:absolute;left:0;right:0;background:repeating-linear-gradient(135deg,var(--surface-3) 0 5px,transparent 5px 10px);opacity:.75;pointer-events:none;z-index:0}
+.blk,.nowline{z-index:1}
+@media (max-width:820px){.hrow{padding:12px 14px}.prac{padding:14px}}
