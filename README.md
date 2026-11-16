@@ -10,6 +10,19 @@ A working demo of **Openslot**, a cancellation recovery product for independent 
 - Both talk to a **Supabase** database (Postgres in the cloud). A *room* is one shared demo, identified by `?room=abc123` in the link. Open the patient app on your phone with the same room code (Demo tools shows a QR code) and every change appears on every device within about a second.
 - If Supabase is not reachable, the demo falls back to this browser only (tabs still sync). The top bar shows **Live** or **This browser only**.
 
+## Design and experience
+- **Design tokens** (colour, spacing, radius, motion) in one stylesheet. **Light, dark and automatic theme** (Demo tools, Appearance).
+- **Responsive on purpose:** desktop sidebar, **icon-only sidebar on tablets**, **bottom tab bar with a More sheet on phones**, touch targets of at least 44 px on touch screens, safe-area support for notched phones. Checked at 360, 390, 768, 1024, 1280 and 1920 px with no sideways scrolling.
+- **Clear status at a glance:** a four-step progress bar for every cancelled slot (Cancelled, Offer sent, Reply, Refilled), colour-coded schedule with a legend, and a highlight pulse on a block when another device changes it, so the live sync is visible.
+- **Patient app feels native:** countdown bar for the offer, animated success state, **Add to calendar** (.ics), sign-up with consent.
+- **Honest states:** a Connecting indicator, a banner when the demo runs on this browser only, empty states, and `prefers-reduced-motion` respected.
+
+![Clinic app, light](docs/screenshots/clinic-today-light.png)
+![Clinic app, dark](docs/screenshots/clinic-today-dark.png)
+![Clinic app on a phone](docs/screenshots/clinic-today-phone.png)
+![Patient offer](docs/screenshots/patient-offer-dark.png)
+![Patient booked](docs/screenshots/patient-booked-dark.png)
+
 ## Presenting it
 Sign in to the clinic app and press **Walkthrough** in the top bar. It lists six steps for the pitch and ticks each one off by itself as you do it, on any device. Steps have shortcuts ("Do it for me", "Open patient app as Anna"). **Demo tools** has a QR code for the phone, a clock you can move forward, and a button to start a fresh room.
 

@@ -96,7 +96,7 @@ const CFG = window.OS_CONFIG || {};
 let API = CFG.url || '';
 const apiOverride = params.get('api'); // only for local testing
 if (apiOverride && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(apiOverride)) API = apiOverride;
-let online = false, version = 0, pending = [], pushing = false, lastError = '';
+let online = false, connecting = !!(CFG.url && CFG.key), version = 0, pending = [], pushing = false, lastError = '';
 
 const listeners = [];
 function loadLocal() { try { const s = JSON.parse(localStorage.getItem(KEY_ROOM)); return s && s.v === 2 ? s : null; } catch (e) { return null; } }
@@ -147,13 +147,14 @@ async function poll() {
   setTimeout(poll, document.hidden ? 5000 : 1200);
 }
 const ready = (async () => {
-  if (!API || !CFG.key) return;
+  if (!API || !CFG.key) { connecting = false; return; }
   try {
     const rows = await rpc('get_or_create_room', { p_room: ROOM, p_seed: S });
     S = rows[0].state; version = rows[0].version; online = true; saveLocal(); changed();
     poll();
     rpc('purge_old_rooms', {}).catch(() => {});
-  } catch (e) { online = false; lastError = String(e.message || e); changed(); }
+  } catch (e) { online = false; lastError = String(e.message || e); }
+  connecting = false; changed();
 })();
 
 function mutate(fn) {
@@ -304,7 +305,12 @@ const api = {
   advance: min => mutate(() => { S.clock += min; log('Demo tools', `Clock moved forward ${min} min`); }),
   update: fn => mutate(fn),
   reset: () => mutate(() => { Object.keys(S).forEach(k => delete S[k]); Object.assign(S, seed()); }),
-  ready, sync: () => ({ online, room: ROOM, error: lastError }),
+  ready, sync: () => ({ online, connecting, room: ROOM, error: lastError }),
+  theme: { get: () => { try { return localStorage.getItem('openslot-theme') || 'auto'; } catch (e) { return 'auto'; } },
+    set: t => { try { if (t === 'auto') localStorage.removeItem('openslot-theme'); else localStorage.setItem('openslot-theme', t); } catch (e) { /* ignore */ }
+      if (t === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t; } },
+  ics: slot => { const d = n => String(n).padStart(2, '0'), f = m => '20261117T' + d(Math.floor(m / 60)) + d(m % 60) + '00';
+    return 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Openslot demo//EN\r\nBEGIN:VEVENT\r\nUID:openslot-' + slot.id + '-' + ROOM + '@demo\r\nDTSTAMP:20261117T091000Z\r\nDTSTART;TZID=Europe/Vienna:' + f(slot.start) + '\r\nDTEND;TZID=Europe/Vienna:' + f(slot.start + slot.dur) + '\r\nSUMMARY:' + slot.service + ' at ' + CLINIC + '\r\nDESCRIPTION:Booked through Openslot (demo, fictional).\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n'; },
   room: () => ROOM,
   link: page => location.origin + location.pathname.replace(/[^/]*$/, '') + page + '?room=' + ROOM,
   newRoom: () => { const r = makeRoom(); try { localStorage.setItem('openslot-room', r); } catch (e) { /* ignore */ } location.href = location.pathname + '?room=' + r; },

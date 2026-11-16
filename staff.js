@@ -10,7 +10,10 @@ const ACCOUNTS = [
 const ROLE_LABEL = { reception: 'Reception', dentist: 'Dentist', owner: 'Owner' };
 let session = null;
 try { session = JSON.parse(sessionStorage.getItem('openslot-session')); } catch (e) { /* none */ }
-const ui = { tour: false, selected: null, filter: 'All', search: '', drawer: null, tools: false, addOpen: false, toast: null };
+const t0 = Date.now();
+const skeleton = () => OS.sync().connecting && Date.now() - t0 < 2500;
+setTimeout(() => render(), 2600);
+const ui = { more: false, tour: false, selected: null, filter: 'All', search: '', drawer: null, tools: false, addOpen: false, toast: null };
 const role = () => session && session.role;
 const S = () => OS.state();
 
@@ -45,12 +48,27 @@ function loginView() {
 
 function syncChip() {
   const y = OS.sync();
-  return y.online ? `<span class="sync live" title="Shared demo room. Changes show up live on every device with this room code.">● Live · room ${esc(y.room)}</span>`
-    : `<span class="sync off" title="${esc(y.error || 'Not connected')}">○ This browser only · room ${esc(y.room)}</span>`;
+  if (y.connecting) return '<span class="sync wait" title="Connecting to the shared demo room">Connecting</span>';
+  return y.online ? `<span class="sync live" title="Shared demo room. Changes show up live on every device with this room code.">Live · room ${esc(y.room)}</span>`
+    : `<span class="sync off" title="${esc(y.error || 'Not connected')}">This browser only · room ${esc(y.room)}</span>`;
 }
 function qrSvg(url) { try { const q = qrcode(0, 'M'); q.addData(url); q.make(); return q.createSvgTag({ cellSize: 5, margin: 0, scalable: true }); } catch (e) { return ''; } }
 
 /* ---------- shell ---------- */
+function tabs(nav, route, st) {
+  const main = nav.filter(n => ['today', 'waiting', 'messages', 'recovery'].includes(n[0]));
+  return main.map(([k, l, d]) => `<a href="#/${k}" ${k === route ? 'aria-current="page"' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>${l === 'Waiting list' ? 'Waiting' : l}${k === 'today' && st.open ? `<span class="badge">${st.open}</span>` : ''}</a>`).join('')
+    + `<button type="button" data-action="more" aria-label="More"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01"/></svg>More</button>`;
+}
+function moreSheet(nav) {
+  const rest = nav.filter(n => !['today', 'waiting', 'messages', 'recovery'].includes(n[0]));
+  const ico = d => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
+  return `<div class="scrim" data-action="more"></div><div class="sheet" role="dialog" aria-label="More"><div class="grip"></div>
+    ${rest.map(([k, l, d]) => `<a href="#/${k}" data-action="more">${ico(d)}${l}</a>`).join('')}
+    <button class="row" data-action="tour">${ico('M5 4v16M5 5h11l-2 4 2 4H5')}Pitch walkthrough</button>
+    <button class="row" data-action="tools">${ico('M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 12h3M18 12h3M12 3v3M12 18v3')}Demo tools</button>
+    <button class="row" data-action="logout">${ico('M9 4H5v16h4M16 8l4 4-4 4M20 12H9')}Sign out (${esc(session.name)})</button></div>`;
+}
 function shell(body, route) {
   const nav = [['today', 'Today', 'M3 5h18v16H3zM3 10h18M8 3v4M16 3v4'], ['waiting', 'Waiting list', 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01'],
     ['messages', 'Messages', 'M4 5h16v11H8l-4 4z'], ['rules', 'Allocation rules', 'M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12'], ['recovery', 'Recovery', 'M4 20V10M10 20V4M16 20v-7M22 20H2']];
@@ -66,10 +84,13 @@ function shell(body, route) {
       <div class="user"><span class="avatar" aria-hidden="true">${esc(session.name.split(' ').map(x => x[0]).join('').slice(0, 2))}</span><div class="user-t"><strong>${esc(session.name)}</strong><span>${ROLE_LABEL[role()]}</span></div>
       <button class="btn ghost small" data-action="logout">Sign out</button></div></div>
   </header>
+  ${(!OS.sync().online && !OS.sync().connecting) ? '<div class="offline-banner" role="status">Working in this browser only. Changes are not shared with other devices right now.</div>' : ''}
   <div class="shell"><nav class="nav" aria-label="Main">
-    ${nav.map(([k, l, d]) => `<a href="#/${k}" ${k === route ? 'aria-current="page"' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>${l}${k === 'today' && st.open ? `<span class="badge">${st.open}</span>` : ''}</a>`).join('')}
+    ${nav.map(([k, l, d]) => `<a href="#/${k}" title="${l}" ${k === route ? 'aria-current="page"' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg><span class="l">${l}</span>${k === 'today' && st.open ? `<span class="badge">${st.open}</span>` : ''}</a>`).join('')}
     <p class="nav-note">Student project demo. No real patients, no real messages are sent.</p></nav>
     <main id="main" tabindex="-1">${body}</main></div>
+  <nav class="tabbar" aria-label="Main">${tabs(nav, route, st)}</nav>
+  ${ui.more ? moreSheet(nav) : ''}
   ${ui.drawer ? drawer() : ''}${ui.addOpen ? addModal() : ''}${ui.tools ? tools() : ''}${ui.tour ? tour() : ''}
   ${ui.toast ? `<div class="toast" role="status">${esc(ui.toast)}</div>` : ''}`;
 }
@@ -100,7 +121,7 @@ function viewToday() {
     <p>Select an appointment. Cancel it on behalf of a patient, or open the patient app in another window and let the patient cancel. Openslot then looks for a replacement.</p></div></div>
     <div class="tiles">${tile('Open cancellations', st.open, st.open ? 'hot' : '')}${tile('Offers waiting for a reply', pend)}${tile('Refilled today', S().slots.filter(s => s.status === 'refilled').length)}${tile('Unfilled today', S().slots.filter(s => s.status === 'unfilled').length)}</div>
     ${att && !S().settings.autoOffer ? `<div class="banner warn">${att} cancelled slot${att > 1 ? 's' : ''} need a staff decision. Automatic offers are switched off in Settings.</div>` : ''}
-    <div class="split"><section class="card sched-card" aria-label="Schedule"><div class="card-head"><h2>Schedule</h2><span class="dim">08:00 to 17:00</span></div>${schedule()}</section>
+    <div class="split"><section class="card sched-card" aria-label="Schedule"><div class="card-head"><h2>Schedule</h2><span class="dim">08:00 to 17:00</span></div><div class="legend"><span><i style="background:var(--info)"></i>Booked</span><span><i style="background:var(--warn)"></i>Finding replacement</span><span><i style="background:var(--ok)"></i>Refilled</span><span><i style="background:var(--bad)"></i>Unfilled</span></div>${schedule()}</section>
     <aside class="panel" aria-label="Appointment details">${panel()}</aside></div>`;
 }
 function offersTimeline(s) {
@@ -110,12 +131,22 @@ function offersTimeline(s) {
     return `<li><div><strong>${esc(p.name)}</strong><span class="dim"> sent ${fmt(o.sentAt)}</span></div><div>${offerChip(o.state)}${o.state === 'pending' ? `<span class="dim"> expires ${fmt(o.expiresAt)}${left > 0 ? ', ' + left + ' min left' : ''}</span>` : ''}</div></li>`;
   }).join('')}</ul>`;
 }
+function stepper(s) {
+  const po = OS.pendingOffer(s), sent = s.offers.length > 0;
+  const st = [
+    ['Cancelled', 'done'],
+    ['Offer sent', sent ? 'done' : 'current'],
+    ['Reply', s.status === 'refilled' ? 'done' : po ? 'current' : (s.status === 'unfilled' ? 'bad' : '')],
+    [s.status === 'unfilled' ? 'Unfilled' : 'Refilled', s.status === 'refilled' ? 'done' : s.status === 'unfilled' ? 'bad' : ''],
+  ];
+  return `<div class="stepper" aria-label="Progress">${st.map(([l, c], i) => `<div class="step ${c}"><i>${c === 'done' ? '✓' : c === 'bad' ? '!' : i + 1}</i>${l}</div>`).join('')}</div>`;
+}
 function panel() {
   const s = ui.selected && OS.slotById(ui.selected);
-  if (!s) return `<div class="card empty"><h3>Select an appointment</h3><p>Click a block in the schedule to see the patient, cancel it, or follow how Openslot refills it.</p></div>`;
+  if (!s) return `<div class="card empty"><svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="12" width="48" height="44" rx="6"/><path d="M8 24h48M20 6v10M44 6v10"/><path d="M24 40l6 6 11-12"/></svg><h3>Select an appointment</h3><p>Click a block in the schedule to see the patient, cancel it, or follow how Openslot refills it.</p></div>`;
   const p = OS.patientById(s.patientId);
   const head = `<div class="card-head"><h2>${esc(s.service)} at ${fmt(s.start)}</h2>${statusChip(s)}</div>
-    <div class="slot-summary"><div class="kv"><span>Practitioner</span><strong>${esc(s.doc)}</strong></div><div class="kv"><span>Duration</span><strong>${s.dur} min</strong></div><div class="kv"><span>Time until start</span><strong>${Math.max(0, s.start - S().clock)} min</strong></div></div>`;
+    <div class="slot-summary"><div class="kv"><span>Practitioner</span><strong>${esc(s.doc)}</strong></div><div class="kv"><span>Duration</span><strong>${s.dur} min</strong></div><div class="kv"><span>Time until start</span><strong>${Math.max(0, s.start - S().clock)} min</strong></div></div>${['cancelled', 'refilled', 'unfilled'].includes(s.status) ? stepper(s) : ''}`;
   if (s.status === 'done') return `<div class="card">${head}<div class="card-body"><p><strong>${esc(p.name)}</strong> was treated. Nothing to do.</p></div></div>`;
   if (s.status === 'booked') {
     return `<div class="card">${head}<div class="card-body">
@@ -223,8 +254,8 @@ function viewRecovery() {
   const weeks = [...S().history, { w: 'Wk 47', c: st.cancelled, r: st.refilled, live: true }];
   const bw = 54, gap = 34, H = 220, left = 44, W = left + weeks.length * (bw + gap);
   const bars = weeks.map((x, i) => { const pct = x.c ? x.r / x.c : 0, h = Math.round(pct * (H - 40)), bx = left + i * (bw + gap) + gap / 2, by = H - h;
-    return `<rect x="${bx}" y="${by}" width="${bw}" height="${h}" rx="4" fill="${x.live ? '#0b6e68' : '#9cc9c5'}"/><text x="${bx + bw / 2}" y="${by - 8}" text-anchor="middle" font-size="13" font-weight="600" fill="#17212b">${Math.round(pct * 100)}%</text><text x="${bx + bw / 2}" y="${H + 20}" text-anchor="middle" font-size="12" fill="#5f6b78">${x.w}${x.live ? ' (live)' : ''}</text>`; }).join('');
-  const grid = [0, 50, 100].map(v => { const y = H - Math.round(v / 100 * (H - 40)); return `<line x1="${left - 6}" x2="${W}" y1="${y}" y2="${y}" stroke="#e2e6ea"/><text x="${left - 12}" y="${y + 4}" text-anchor="end" font-size="11" fill="#5f6b78">${v}%</text>`; }).join('');
+    return `<rect x="${bx}" y="${by}" width="${bw}" height="${h}" rx="4" class="bar ${x.live ? 'live' : ''}"/><text class="val" x="${bx + bw / 2}" y="${by - 8}" text-anchor="middle" font-size="13">${Math.round(pct * 100)}%</text><text x="${bx + bw / 2}" y="${H + 20}" text-anchor="middle" font-size="12">${x.w}${x.live ? ' (live)' : ''}</text>`; }).join('');
+  const grid = [0, 50, 100].map(v => { const y = H - Math.round(v / 100 * (H - 40)); return `<line x1="${left - 6}" x2="${W}" y1="${y}" y2="${y}" class="gl"/><text x="${left - 12}" y="${y + 4}" text-anchor="end" font-size="11">${v}%</text>`; }).join('');
   const all = OS.offerLog(), acc = all.filter(l => l.result === 'accepted'), accRate = all.length ? Math.round(100 * acc.length / all.length) : 0, reply = acc.length ? Math.round(acc.reduce((a, l) => a + l.mins, 0) / acc.length) : 0;
   const rows = all.slice(0, 10).map(l => `<tr><td class="dim">${esc(l.time)}</td><td>${esc(l.slot)}</td><td>${esc(l.who)}</td><td><span class="chip ${l.result === 'accepted' ? 'ok' : l.result === 'declined' ? 'bad' : 'neutral'}">${l.result}</span></td><td class="num">${l.mins} min</td></tr>`).join('');
   return `<div class="page-head"><div><h1>Recovery</h1><p>How many cancelled slots the clinic got back. Earlier weeks are sample data. This week updates live.</p></div></div>
@@ -280,6 +311,8 @@ function tools() {
   <div class="drawer-body"><div class="kv"><span>Demo clock</span><strong>Tue 17 Nov, ${fmt(S().clock)}</strong></div>
     <div class="tool-row"><button class="btn" data-action="advance" data-m="5">Move 5 min forward</button><button class="btn" data-action="advance" data-m="15">Move 15 min forward</button></div>
     <p class="note">Offers expire when the clock passes their time. Moving the clock is how you show an unanswered offer.</p>
+    <div class="section-title" style="padding-left:0">Appearance</div>
+    <div class="seg" role="group" aria-label="Theme">${['auto', 'light', 'dark'].map(t => `<button type="button" data-action="theme" data-t="${t}" aria-pressed="${OS.theme.get() === t}">${t[0].toUpperCase() + t.slice(1)}</button>`).join('')}</div>
     <div class="section-title" style="padding-left:0">Show it on a phone</div>
     <div class="qr-box"><div class="qr">${qrSvg(OS.link('patient.html'))}</div><div><strong>Scan to open the patient app</strong><p class="note" style="margin-top:4px">Same room, so phone and laptop stay in sync. Room code <strong>${esc(OS.room())}</strong>.</p>
       <p class="note" style="word-break:break-all">${esc(OS.link('patient.html'))}</p></div></div>
@@ -293,6 +326,7 @@ function tools() {
 /* ---------- render ---------- */
 const ROUTES = { today: viewToday, waiting: viewWaiting, messages: viewMessages, rules: viewRules, recovery: viewRecovery, settings: viewSettings, audit: viewAudit };
 const route = () => (location.hash.replace('#/', '') || 'today');
+let prevOpen = {}, prevSig = null;
 function render() {
   const app = $('#app');
   if (!session) { app.innerHTML = loginView(); return; }
@@ -300,11 +334,19 @@ function render() {
   if (r === 'settings' && !can(role(), 'settings')) r = 'today';
   if (r === 'audit' && !can(role(), 'audit')) r = 'today';
   const active = document.activeElement, keep = active && active.id === 'search' ? active.selectionStart : null;
-  app.innerHTML = shell(ROUTES[r](), r);
+  const body = skeleton() ? '<div class="skeleton" style="height:60px;width:50%"></div><div class="skeleton"></div><div class="skeleton" style="height:320px"></div>' : ROUTES[r]();
+  app.innerHTML = shell(body, r);
+  const now = { drawer: !!ui.drawer, tools: !!ui.tools, tour: !!ui.tour, add: !!ui.addOpen };
+  if ((now.drawer && !prevOpen.drawer) || (now.tools && !prevOpen.tools) || (now.tour && !prevOpen.tour)) { const el = app.querySelector('.drawer'); if (el) el.classList.add('enter'); }
+  if (now.add && !prevOpen.add) { const el = app.querySelector('.modal'); if (el) el.classList.add('enter'); }
+  prevOpen = now;
+  const sig = {}; S().slots.forEach(x => { sig[x.id] = x.status + ':' + x.offers.map(o => o.state).join(','); });
+  if (prevSig) app.querySelectorAll('.blk[data-slot]').forEach(el => { const id = el.dataset.slot; if (prevSig[id] !== undefined && prevSig[id] !== sig[id]) el.classList.add('flash'); });
+  prevSig = sig;
   if (keep !== null) { const el = $('#search'); if (el) { el.focus(); el.setSelectionRange(keep, keep); } }
 }
 OS.onChange(render);
-window.addEventListener('hashchange', () => { ui.drawer = null; render(); window.scrollTo(0, 0); });
+window.addEventListener('hashchange', () => { ui.drawer = null; ui.more = false; render(); window.scrollTo(0, 0); });
 
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-action]'); if (!b) return;
@@ -323,18 +365,21 @@ document.addEventListener('click', e => {
   else if (a === 'add-open') ui.addOpen = true;
   else if (a === 'add-close') ui.addOpen = false;
   else if (a === 'move-rule') { OS.update(st => { const i = +d.i, j = i + +d.dir; [st.rules[i], st.rules[j]] = [st.rules[j], st.rules[i]]; st.approval = { by: session.name, at: 'just now' }; st.audit.push({ t: fmt(st.clock), actor: who, action: 'Changed the order of allocation rules' }); }); return; }
-  else if (a === 'tour') ui.tour = !ui.tour;
+  else if (a === 'tour') { ui.tour = !ui.tour; ui.more = false; }
+  else if (a === 'more') ui.more = !ui.more;
+  else if (a === 'theme') OS.theme.set(d.t);
   else if (a === 'tour-close') ui.tour = false;
   else if (a === 'tour-cancel4') { OS.cancel(4, 'patient', 'Feeling unwell', 'Oskar Lindner (patient app)'); ui.selected = 4; location.hash = '#/today'; return; }
   else if (a === 'tour-cancel6') { OS.cancel(6, 'reception', 'Patient called', session.name + ' (' + ROLE_LABEL[role()] + ')'); ui.selected = 6; return; }
   else if (a === 'tour-select4') { ui.selected = 4; location.hash = '#/today'; }
-  else if (a === 'tools') ui.tools = !ui.tools;
+  else if (a === 'tools') { ui.tools = !ui.tools; ui.more = false; }
   else if (a === 'new-room') { OS.newRoom(); return; }
   else if (a === 'advance') { OS.advance(+d.m); return; }
   else if (a === 'sim-cancel') { OS.cancel(4, 'patient', 'Feeling unwell', 'Oskar Lindner (patient app)'); ui.tools = false; ui.selected = 4; location.hash = '#/today'; render(); return; }
   else if (a === 'reset') { OS.reset(); ui.selected = null; ui.drawer = null; ui.tools = false; toast('Demo data reset'); return; }
   else if (a === 'csv') { const blob = new Blob([OS.csvAudit()], { type: 'text/csv' }), l = document.createElement('a'); l.href = URL.createObjectURL(blob); l.download = 'openslot-audit-log.csv'; l.click(); }
   render();
+  if ((a === 'select' || a === 'tour-select4') && window.innerWidth <= 1180) requestAnimationFrame(() => { const el = $('.panel'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
 });
 document.addEventListener('submit', e => {
   if (e.target.id === 'login-form') { e.preventDefault(); const acct = ACCOUNTS.find(x => x.email === $('#email').value.trim()) || ACCOUNTS[0]; session = acct; sessionStorage.setItem('openslot-session', JSON.stringify(acct)); location.hash = '#/today'; render(); }
@@ -349,7 +394,7 @@ document.addEventListener('submit', e => {
   }
 });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { ui.drawer = null; ui.addOpen = false; ui.tools = false; ui.tour = false; render(); }
+  if (e.key === 'Escape') { ui.drawer = null; ui.addOpen = false; ui.tools = false; ui.tour = false; ui.more = false; render(); }
   if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('tr[data-action="open-patient"]')) { e.preventDefault(); ui.drawer = +e.target.dataset.p; render(); }
 });
 document.addEventListener('change', e => {

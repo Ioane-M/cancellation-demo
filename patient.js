@@ -5,6 +5,9 @@ const $ = s => document.querySelector(s);
 const S = () => OS.state();
 let pid = null;
 try { pid = +sessionStorage.getItem('openslot-patient') || null; } catch (e) { /* none */ }
+const t0 = Date.now();
+const skeleton = () => OS.sync().connecting && Date.now() - t0 < 2500;
+setTimeout(() => render(), 2600);
 const ui = { toast: null, tools: false, confirm: null, joinAvail: DAYS.map(() => ({ M: true, A: false, E: false })) };
 const asParam = new URLSearchParams(location.search).get('as');
 if (asParam && /^\d+$/.test(asParam)) { pid = +asParam; try { sessionStorage.setItem('openslot-patient', pid); } catch (e) { /* ignore */ } }
@@ -30,11 +33,12 @@ function loginView() {
 
 function offerCard(s, o, full) {
   const left = Math.max(0, o.expiresAt - S().clock);
-  if (o.state === 'accepted') return `<div class="pt-card ok"><h3>You are booked</h3><p>${esc(s.service)} today at <strong>${fmt(s.start)}</strong> with ${esc(s.doc)}. See you soon.</p></div>`;
+  if (o.state === 'accepted') return `<div class="pt-card ok"><div class="success"><svg viewBox="0 0 56 56" aria-hidden="true"><circle cx="28" cy="28" r="26"/><path d="M16 29l8 8 16-17"/></svg><h3>You are booked</h3></div><p style="text-align:center">${esc(s.service)} today at <strong>${fmt(s.start)}</strong> with ${esc(s.doc)}. See you soon.</p>
+    <div class="pt-actions"><button class="btn big" data-action="ics" data-s="${s.id}">Add to calendar</button></div></div>`;
   if (o.state === 'declined') return `<div class="pt-card"><h3>You declined this offer</h3><p class="dim">${esc(s.service)} at ${fmt(s.start)}. You stay on the waiting list.</p></div>`;
   if (o.state === 'expired') return `<div class="pt-card"><h3>This offer expired</h3><p class="dim">${esc(s.service)} at ${fmt(s.start)} was offered to the next patient. You stay on the waiting list.</p></div>`;
   return `<div class="pt-card offer"><span class="chip info">Earlier appointment available</span><h3>${esc(s.service)} today at ${fmt(s.start)}</h3>
-    <p>with ${esc(s.doc)} at ${CLINIC}, ${s.dur} minutes.</p><p class="countdown"><strong>${left} min</strong> left to answer</p>
+    <p>with ${esc(s.doc)} at ${CLINIC}, ${s.dur} minutes.</p><div class="countdown"><span>Time left to answer</span><strong>${left} min</strong></div><div class="progress ${left <= 5 ? 'urgent' : ''}" role="progressbar" aria-valuemin="0" aria-valuemax="${o.expiresAt - o.sentAt}" aria-valuenow="${left}"><i style="width:${Math.max(0, Math.min(100, Math.round(100 * left / Math.max(1, o.expiresAt - o.sentAt))))}%"></i></div>
     <div class="pt-actions"><button class="btn primary big" data-action="accept" data-o="${o.id}">Take this appointment</button><button class="btn big" data-action="decline" data-o="${o.id}">No thanks</button></div>
     <p class="note">If you take it, your later appointment (${esc(me().current || 'none')}) is released for other patients.</p></div>`;
 }
@@ -54,7 +58,9 @@ function homeView() {
   const slot = S().slots.find(s => s.patientId === p.id);
   let h = `<h1 class="pt-h">Hello ${esc(p.name.split(' ')[0])}</h1>`;
   pend.forEach(x => { h += offerCard(x.s, x.o); });
-  if (p.appt && S().slots.find(s => s.id === p.appt)) {
+  const accepted = offers.find(x => x.o.state === 'accepted');
+  if (accepted) h += offerCard(accepted.s, accepted.o);
+  if (p.appt && S().slots.find(s => s.id === p.appt) && !(accepted && p.appt === accepted.s.id)) {
     const s = S().slots.find(s => s.id === p.appt);
     h += `<section class="pt-card"><span class="chip ${s.status === 'refilled' ? 'ok' : 'info'}">${s.status === 'refilled' ? 'Moved earlier' : 'Booked'}</span><h3>${esc(s.service)} today at ${fmt(s.start)}</h3><p>with ${esc(s.doc)}, ${s.dur} minutes</p>
       ${s.status === 'booked' && s.start > S().clock ? '<button class="btn danger" data-action="cancel-ask">Cancel appointment</button><p class="note">If you cancel, the clinic can offer your slot to someone who is waiting. Thank you for letting us know early.</p>' : ''}</section>`;
@@ -65,13 +71,13 @@ function homeView() {
     h += `<section class="pt-card"><h3>Earlier appointment</h3><p>You are on the list for <strong>${p.wl.services.map(esc).join(', ')}</strong> since ${p.wl.wait} days.</p>
       <p class="dim">Current appointment: ${esc(p.current)}</p><div class="kv"><span>You told us you can come on</span><div class="days">${p.wl.avail.map((d, i) => `<span class="${d.M || d.A || d.E ? 'on' : ''}">${DAYS[i]}</span>`).join('')}</div></div>
       <a class="btn" href="#/availability">Change when I can come</a></section>`;
-  } else if (p.wl && p.wl.status === 'booked') {
+  } else if (p.wl && p.wl.status === 'booked' && !accepted) {
     h += `<section class="pt-card ok"><h3>You moved to an earlier appointment</h3><p>Your later appointment was released.</p></section>`;
   } else if (p.wl && p.wl.status === 'removed') {
     h += `<section class="pt-card"><h3>You left the waiting list</h3><p class="dim">You will not receive offers anymore.</p></section>`;
   }
   if ((!p.wl || p.wl.status === 'removed') && !p.appt && !S().slots.some(s => s.patientId === p.id)) h += joinCard();
-  const hist = offers.filter(x => x.o.state !== 'pending');
+  const hist = offers.filter(x => x.o.state !== 'pending' && x.o.state !== 'accepted');
   if (hist.length) h += `<div class="section-title" style="padding-left:2px">Earlier offers</div>` + hist.map(x => offerCard(x.s, x.o)).join('');
   return h;
 }
@@ -112,12 +118,12 @@ function render() {
   const p = me(), unread = S().outbox.filter(m => m.pid === pid).length;
   const tab = (k, l, d) => `<a href="#/${k}" ${(parts[0] === k || (k === 'home' && !['availability', 'messages', 'privacy'].includes(parts[0]))) ? 'aria-current="page"' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>${l}</a>`;
   app.innerHTML = `<div class="pt-wrap"><header class="pt-top"><div class="brand"><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="currentColor"/><path d="M9 16a7 7 0 1 1 7 7" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/></svg><span class="wordmark">Openslot</span></div>
-    <div class="topbar-right"><span class="sync ${OS.sync().online ? 'live' : 'off'}" title="Room ${esc(OS.room())}">${OS.sync().online ? '● Live' : '○ Local'}</span><button class="btn ghost small" data-action="tools">Tools</button><button class="btn ghost small" data-action="logout">Switch</button></div></header>
-    <main id="main" class="pt-main">${body}</main>
+    <div class="topbar-right"><span class="sync ${OS.sync().connecting ? 'wait' : OS.sync().online ? 'live' : 'off'}" title="Room ${esc(OS.room())}">${OS.sync().connecting ? 'Connecting' : OS.sync().online ? 'Live' : 'This browser only'}</span><button class="btn ghost small" data-action="tools">Tools</button><button class="btn ghost small" data-action="logout">Switch</button></div></header>
+    ${(!OS.sync().online && !OS.sync().connecting) ? '<div class="offline-banner" role="status">Working in this browser only right now.</div>' : ''}<main id="main" class="pt-main">${skeleton() ? '<div class="skeleton"></div><div class="skeleton" style="height:140px"></div>' : body}</main>
     <nav class="pt-tabs" aria-label="Main">${tab('home', 'Home', 'M3 11l9-8 9 8v10H3z')}${p.wl ? tab('availability', 'Availability', 'M3 5h18v16H3zM3 10h18M8 3v4M16 3v4') : ''}${tab('messages', 'Messages' + (unread ? ' (' + unread + ')' : ''), 'M4 5h16v11H8l-4 4z')}${tab('privacy', 'Privacy', 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z')}</nav></div>
     ${ui.confirm ? `<div class="scrim" data-action="confirm-no"></div><div class="modal" role="dialog" aria-modal="true"><h2>Cancel your appointment?</h2><div class="field" style="margin-top:8px"><label for="reason">Reason (optional)</label><select id="reason"><option>Feeling unwell</option><option>Schedule conflict</option><option>No longer needed</option><option>Other</option></select></div>
       <div class="modal-foot"><button class="btn" data-action="confirm-no">Keep it</button><button class="btn danger" data-action="confirm-yes">Cancel appointment</button></div></div>` : ''}
-    ${ui.tools ? `<div class="scrim" data-action="tools"></div><aside class="drawer small"><div class="drawer-head"><div><h2>Demo tools</h2><p class="dim">Clock: Tue 17 Nov, ${fmt(S().clock)}</p></div><button class="btn ghost small" data-action="tools">Close</button></div><div class="drawer-body"><div class="tool-row"><button class="btn" data-action="advance" data-m="5">+5 min</button><button class="btn" data-action="advance" data-m="15">+15 min</button></div><p class="note">Move the clock to let an offer expire.</p><a class="btn block" style="text-align:center;text-decoration:none" href="${OS.link('index.html')}" target="_blank" rel="noopener">Open the clinic app</a><button class="btn danger block" style="margin-top:8px" data-action="reset">Reset all demo data</button></div></aside>` : ''}
+    ${ui.tools ? `<div class="scrim" data-action="tools"></div><aside class="drawer small"><div class="drawer-head"><div><h2>Demo tools</h2><p class="dim">Clock: Tue 17 Nov, ${fmt(S().clock)}</p></div><button class="btn ghost small" data-action="tools">Close</button></div><div class="drawer-body"><div class="tool-row"><button class="btn" data-action="advance" data-m="5">+5 min</button><button class="btn" data-action="advance" data-m="15">+15 min</button></div><p class="note">Move the clock to let an offer expire.</p><div class="section-title" style="padding-left:0">Appearance</div><div class="seg" role="group" aria-label="Theme">${['auto', 'light', 'dark'].map(t => `<button type="button" data-action="theme" data-t="${t}" aria-pressed="${OS.theme.get() === t}">${t[0].toUpperCase() + t.slice(1)}</button>`).join('')}</div><div style="height:14px"></div><a class="btn block" style="text-align:center;text-decoration:none" href="${OS.link('index.html')}" target="_blank" rel="noopener">Open the clinic app</a><button class="btn danger block" style="margin-top:8px" data-action="reset">Reset all demo data</button></div></aside>` : ''}
     ${ui.toast ? `<div class="toast" role="status">${esc(ui.toast)}</div>` : ''}`;
 }
 OS.onChange(render);
@@ -140,6 +146,8 @@ document.addEventListener('click', e => {
   else if (a === 'download') { const p = me(), data = { name: p.name, phone: p.phone, consent: p.consent, waitingList: p.wl, offers: myOffers().map(x => ({ slot: x.s.service + ' ' + fmt(x.s.start), state: x.o.state })) }, blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), l = document.createElement('a'); l.href = URL.createObjectURL(blob); l.download = 'my-openslot-data.json'; l.click(); }
   else if (a === 'jt') { ui.joinAvail[+d.d][d.k] = !ui.joinAvail[+d.d][d.k]; }
   else if (a === 'tools') ui.tools = !ui.tools;
+  else if (a === 'theme') OS.theme.set(d.t);
+  else if (a === 'ics') { const sl = OS.slotById(d.s), blob = new Blob([OS.ics(sl)], { type: 'text/calendar' }), l = document.createElement('a'); l.href = URL.createObjectURL(blob); l.download = 'appointment.ics'; l.click(); }
   else if (a === 'advance') { OS.advance(+d.m); return; }
   else if (a === 'reset') { OS.reset(); ui.tools = false; toast('Demo data reset'); return; }
   render();
