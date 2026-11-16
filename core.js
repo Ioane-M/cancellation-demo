@@ -306,9 +306,10 @@ const api = {
   update: fn => mutate(fn),
   reset: () => mutate(() => { Object.keys(S).forEach(k => delete S[k]); Object.assign(S, seed()); }),
   ready, sync: () => ({ online, connecting, room: ROOM, error: lastError }),
-  theme: { get: () => { try { return localStorage.getItem('openslot-theme') || 'auto'; } catch (e) { return 'auto'; } },
-    set: t => { try { if (t === 'auto') localStorage.removeItem('openslot-theme'); else localStorage.setItem('openslot-theme', t); } catch (e) { /* ignore */ }
-      if (t === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t; } },
+  theme: { get: () => { try { return localStorage.getItem('openslot-theme') || 'light'; } catch (e) { return 'light'; } },
+    set: t => { try { localStorage.setItem('openslot-theme', t); } catch (e) { /* ignore */ } document.documentElement.dataset.theme = t; } },
+  accent: { get: () => { try { return localStorage.getItem('openslot-accent') || 'blue'; } catch (e) { return 'blue'; } },
+    set: t => { try { localStorage.setItem('openslot-accent', t); } catch (e) { /* ignore */ } if (t === 'blue') delete document.documentElement.dataset.accent; else document.documentElement.dataset.accent = t; } },
   ics: slot => { const d = n => String(n).padStart(2, '0'), f = m => '20261117T' + d(Math.floor(m / 60)) + d(m % 60) + '00';
     return 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Openslot demo//EN\r\nBEGIN:VEVENT\r\nUID:openslot-' + slot.id + '-' + ROOM + '@demo\r\nDTSTAMP:20261117T091000Z\r\nDTSTART;TZID=Europe/Vienna:' + f(slot.start) + '\r\nDTEND;TZID=Europe/Vienna:' + f(slot.start + slot.dur) + '\r\nSUMMARY:' + slot.service + ' at ' + CLINIC + '\r\nDESCRIPTION:Booked through Openslot (demo, fictional).\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n'; },
   room: () => ROOM,

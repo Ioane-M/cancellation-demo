@@ -13,7 +13,7 @@ try { session = JSON.parse(sessionStorage.getItem('openslot-session')); } catch 
 const t0 = Date.now();
 const skeleton = () => OS.sync().connecting && Date.now() - t0 < 2500;
 setTimeout(() => render(), 2600);
-const ui = { more: false, tour: false, selected: null, filter: 'All', search: '', drawer: null, tools: false, addOpen: false, toast: null };
+const ui = { menu: null, more: false, tour: false, selected: null, filter: 'All', search: '', drawer: null, tools: false, addOpen: false, toast: null };
 const role = () => session && session.role;
 const S = () => OS.state();
 
@@ -22,7 +22,7 @@ function toast(msg) {
   clearTimeout(toast.t); toast.t = setTimeout(() => { ui.toast = null; render(); }, 2600);
 }
 const statusChip = s => ({
-  done: '<span class="chip neutral">Done</span>', booked: '<span class="chip info">Booked</span>',
+  done: '<span class="chip neutral">Done</span>', booked: '<span class="chip neutral">Booked</span>',
   cancelled: '<span class="chip warn">Finding replacement</span>', refilled: '<span class="chip ok">Refilled</span>', unfilled: '<span class="chip bad">Unfilled</span>',
 }[s.status]);
 const offerChip = st => ({ pending: '<span class="chip info">Waiting for reply</span>', accepted: '<span class="chip ok">Accepted</span>', declined: '<span class="chip bad">Declined</span>', expired: '<span class="chip neutral">Expired</span>' }[st]);
@@ -34,15 +34,17 @@ function loginView() {
       <div class="login-brand"><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="currentColor"/><path d="M9 16a7 7 0 1 1 7 7" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/></svg><span class="wordmark">Openslot</span></div>
       <h1>Sign in to your clinic</h1>
       <p class="muted">Cancelled appointments, refilled automatically from your waiting list.</p>
-      <form id="login-form" autocomplete="off">
-        <label for="email">Email</label><input id="email" type="email" value="maria@linden-dental.example" aria-label="Email">
-        <label for="pw">Password</label><input id="pw" type="password" value="demo-password" aria-label="Password">
+      <form id="login-form" novalidate>
+        <label for="email">Work email</label><input id="email" type="email" placeholder="you@yourclinic.at" autocomplete="username" required>
+        <label for="pw">Password</label><input id="pw" type="password" placeholder="Your password" autocomplete="current-password" required>
+        <p class="form-err" id="login-err" role="alert" hidden></p>
         <button class="btn primary block" type="submit">Sign in</button>
       </form>
-      <div class="demo-accounts"><div class="section-title" style="padding-left:0">Demo accounts, pick a role</div>
+      <details class="demo-access"><summary>Demo access</summary>
+        <p class="note" style="margin-top:8px">This is a student project with fictional data. Pick a role to look around.</p>
         ${ACCOUNTS.map(a => `<button class="acct" data-action="login" data-role="${a.role}"><strong>${esc(a.name)}</strong><span>${a.title}</span></button>`).join('')}
-      </div>
-      <p class="note">Student project demo. Everything on this site is fictional. <a href="${OS.link('patient.html')}">Open the patient app</a></p>
+        <p class="note"><a href="${OS.link('patient.html')}">Open the patient app</a></p>
+      </details>
     </div></div>`;
 }
 
@@ -53,6 +55,23 @@ function syncChip() {
     : `<span class="sync off" title="${esc(y.error || 'Not connected')}">This browser only · room ${esc(y.room)}</span>`;
 }
 function qrSvg(url) { try { const q = qrcode(0, 'M'); q.addData(url); q.make(); return q.createSvgTag({ cellSize: 5, margin: 0, scalable: true }); } catch (e) { return ''; } }
+
+function popover() {
+  if (ui.menu === 'demo') return `<div class="pop-scrim" data-action="menu-close"></div><div class="popover" role="menu" aria-label="Demo menu">
+    <div class="pop-head"><strong>Demo</strong><span class="chip warn">Fictional data</span></div>
+    <div class="pop-row"><span>Demo clock</span><strong>Tue 17 Nov, ${fmt(S().clock)}</strong></div>
+    <div class="pop-row"><span>Shared room</span>${syncChip()}</div>
+    <button class="pop-item" role="menuitem" data-action="tour">Pitch walkthrough</button>
+    <button class="pop-item" role="menuitem" data-action="tools">Demo tools</button>
+    <a class="pop-item" role="menuitem" href="${OS.link('patient.html')}" target="_blank" rel="noopener">Open the patient app</a>
+    <p class="pop-note">Student project demo. Everything here is fictional and nothing is sent to anyone.</p></div>`;
+  const acct = ACCOUNTS.find(x => x.role === role()) || {};
+  return `<div class="pop-scrim" data-action="menu-close"></div><div class="popover" role="menu" aria-label="Account menu">
+    <div class="pop-head"><span class="avatar" aria-hidden="true">${esc(session.name.split(' ').map(x => x[0]).join('').slice(0, 2))}</span><div><strong>${esc(session.name)}</strong><br><span class="dim">${esc(acct.title || ROLE_LABEL[role()])}</span><br><span class="dim">${esc(acct.email || '')}</span></div></div>
+    <div class="pop-row col"><span>Appearance</span><div class="seg" role="group" aria-label="Theme">${['auto', 'light', 'dark'].map(t => `<button type="button" data-action="theme" data-t="${t}" aria-pressed="${OS.theme.get() === t}">${t[0].toUpperCase() + t.slice(1)}</button>`).join('')}</div></div>
+    <div class="pop-row col"><span>Accent colour</span><div class="seg" role="group" aria-label="Accent colour">${['blue', 'teal'].map(t => `<button type="button" data-action="accent" data-t="${t}" aria-pressed="${OS.accent.get() === t}">${t[0].toUpperCase() + t.slice(1)}</button>`).join('')}</div></div>
+    <button class="pop-item danger" role="menuitem" data-action="logout">Sign out</button></div>`;
+}
 
 /* ---------- shell ---------- */
 function tabs(nav, route, st) {
@@ -79,15 +98,16 @@ function shell(body, route) {
   <header class="topbar">
     <div class="brand"><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="currentColor"/><path d="M9 16a7 7 0 1 1 7 7" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/></svg>
       <span class="wordmark">Openslot</span><span class="divider" aria-hidden="true"></span><span class="clinic">${CLINIC} <span class="muted">Vienna</span></span></div>
-    <div class="topbar-right"><span class="clock">Tue 17 Nov, ${fmt(S().clock)}</span>${syncChip()}<span class="demo-tag">Demo with fake data</span>
-      <button class="btn small" data-action="tour">Walkthrough</button><button class="btn small" data-action="tools">Demo tools</button>
-      <div class="user"><span class="avatar" aria-hidden="true">${esc(session.name.split(' ').map(x => x[0]).join('').slice(0, 2))}</span><div class="user-t"><strong>${esc(session.name)}</strong><span>${ROLE_LABEL[role()]}</span></div>
-      <button class="btn ghost small" data-action="logout">Sign out</button></div></div>
-  </header>
+    <label class="gsearch"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input id="gsearch" type="search" placeholder="Search patients" aria-label="Search patients" value="${esc(ui.search)}" autocomplete="off"></label>
+    <div class="topbar-right">
+      <button class="icon-btn" data-action="menu" data-m="demo" aria-label="Demo menu" aria-haspopup="menu" aria-expanded="${ui.menu === 'demo'}" title="Demo menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01" stroke-width="3"/></svg></button>
+      <button class="avatar-btn" data-action="menu" data-m="user" aria-label="Account menu" aria-haspopup="menu" aria-expanded="${ui.menu === 'user'}"><span class="avatar" aria-hidden="true">${esc(session.name.split(' ').map(x => x[0]).join('').slice(0, 2))}</span><span class="user-t"><strong>${esc(session.name)}</strong><span>${ROLE_LABEL[role()]}</span></span></button>
+    </div>
+  </header>${ui.menu ? popover() : ''}
   ${(!OS.sync().online && !OS.sync().connecting) ? '<div class="offline-banner" role="status">Working in this browser only. Changes are not shared with other devices right now.</div>' : ''}
   <div class="shell"><nav class="nav" aria-label="Main">
     ${nav.map(([k, l, d]) => `<a href="#/${k}" title="${l}" ${k === route ? 'aria-current="page"' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg><span class="l">${l}</span>${k === 'today' && st.open ? `<span class="badge">${st.open}</span>` : ''}</a>`).join('')}
-    <p class="nav-note">Student project demo. No real patients, no real messages are sent.</p></nav>
+</nav>
     <main id="main" tabindex="-1">${body}</main></div>
   <nav class="tabbar" aria-label="Main">${tabs(nav, route, st)}</nav>
   ${ui.more ? moreSheet(nav) : ''}
@@ -118,10 +138,10 @@ function viewToday() {
   const tile = (l, v, cls) => `<div class="card tile ${cls || ''}"><span>${l}</span><strong>${v}</strong></div>`;
   const att = S().slots.filter(s => s.status === 'cancelled' && !OS.pendingOffer(s)).length;
   return `<div class="page-head"><div><h1>Today, Tuesday 17 November</h1>
-    <p>Select an appointment. Cancel it on behalf of a patient, or open the patient app in another window and let the patient cancel. Openslot then looks for a replacement.</p></div></div>
+    <p>Freed slots are offered to your waiting list automatically. Select an appointment to see its details.</p></div></div>
     <div class="tiles">${tile('Open cancellations', st.open, st.open ? 'hot' : '')}${tile('Offers waiting for a reply', pend)}${tile('Refilled today', S().slots.filter(s => s.status === 'refilled').length)}${tile('Unfilled today', S().slots.filter(s => s.status === 'unfilled').length)}</div>
     ${att && !S().settings.autoOffer ? `<div class="banner warn">${att} cancelled slot${att > 1 ? 's' : ''} need a staff decision. Automatic offers are switched off in Settings.</div>` : ''}
-    <div class="split"><section class="card sched-card" aria-label="Schedule"><div class="card-head"><h2>Schedule</h2><span class="dim">08:00 to 17:00</span></div><div class="legend"><span><i style="background:var(--info)"></i>Booked</span><span><i style="background:var(--warn)"></i>Finding replacement</span><span><i style="background:var(--ok)"></i>Refilled</span><span><i style="background:var(--bad)"></i>Unfilled</span></div>${schedule()}</section>
+    <div class="split"><section class="card sched-card" aria-label="Schedule"><div class="card-head"><h2>Schedule</h2><span class="dim">08:00 to 17:00</span></div><div class="legend"><span><i style="background:var(--booked)"></i>Booked</span><span><i style="background:var(--warn)"></i>Finding replacement</span><span><i style="background:var(--ok)"></i>Refilled</span><span><i style="background:var(--bad)"></i>Unfilled</span></div>${schedule()}</section>
     <aside class="panel" aria-label="Appointment details">${panel()}</aside></div>`;
 }
 function offersTimeline(s) {
@@ -154,7 +174,7 @@ function panel() {
       ${can(role(), 'cancel') ? `<div class="field" style="margin-top:0"><label for="reason">Reason for cancelling</label>
         <select id="reason"><option>Patient called</option><option>Patient is ill</option><option>Patient cannot make it</option><option>Practitioner unavailable</option></select></div>
         <button class="btn danger block" style="margin-top:14px" data-action="cancel" data-slot="${s.id}">Cancel appointment and find a replacement</button>
-        <p class="note">Patients can also cancel in their own app. Open <a href="${OS.link('patient.html')}" target="_blank" rel="noopener">the patient app</a> as ${esc(p.name)} to try it.</p>` : '<p class="note">Your role cannot cancel appointments.</p>'}</div></div>`;
+        <p class="note">Patients can also cancel from their own app. Openslot handles those the same way.</p>` : '<p class="note">Your role cannot cancel appointments.</p>'}</div></div>`;
   }
   if (s.status === 'refilled') {
     const f = OS.patientById(s.filledBy);
@@ -232,7 +252,7 @@ function addModal() {
 /* ---------- messages, rules, recovery, settings, audit ---------- */
 function viewMessages() {
   const rows = S().outbox.slice().reverse().map(m => { const p = OS.patientById(m.pid); return `<tr><td class="dim nowrap">Tue ${esc(m.time)}</td><td class="nowrap"><strong>${esc(p.name)}</strong><br><span class="dim">${esc(p.phone)}</span></td><td class="hide-sm"><span class="chip ${m.kind === 'offer' ? 'info' : 'neutral'}">${m.kind === 'offer' ? 'Offer' : 'Confirmation'}</span></td><td>${esc(m.text)}</td></tr>`; }).join('');
-  return `<div class="page-head"><div><h1>Messages</h1><p>Every SMS Openslot sends. In the real product these go out through an SMS gateway. In this demo they appear in the patient app, so open it in a second window.</p></div><a class="btn" href="${OS.link('patient.html')}" target="_blank" rel="noopener">Open patient app</a></div>
+  return `<div class="page-head"><div><h1>Messages</h1><p>Every SMS Openslot sends to your patients, and what they answered.</p></div></div>
   <section class="card"><div class="table-wrap"><table><thead><tr><th>Sent</th><th>To</th><th class="hide-sm">Type</th><th>Message</th></tr></thead><tbody>${rows || '<tr><td colspan="4" class="empty">No messages yet. Cancel an appointment on the Today page.</td></tr>'}</tbody></table></div></section>`;
 }
 function viewRules() {
@@ -258,7 +278,7 @@ function viewRecovery() {
   const grid = [0, 50, 100].map(v => { const y = H - Math.round(v / 100 * (H - 40)); return `<line x1="${left - 6}" x2="${W}" y1="${y}" y2="${y}" class="gl"/><text x="${left - 12}" y="${y + 4}" text-anchor="end" font-size="11">${v}%</text>`; }).join('');
   const all = OS.offerLog(), acc = all.filter(l => l.result === 'accepted'), accRate = all.length ? Math.round(100 * acc.length / all.length) : 0, reply = acc.length ? Math.round(acc.reduce((a, l) => a + l.mins, 0) / acc.length) : 0;
   const rows = all.slice(0, 10).map(l => `<tr><td class="dim">${esc(l.time)}</td><td>${esc(l.slot)}</td><td>${esc(l.who)}</td><td><span class="chip ${l.result === 'accepted' ? 'ok' : l.result === 'declined' ? 'bad' : 'neutral'}">${l.result}</span></td><td class="num">${l.mins} min</td></tr>`).join('');
-  return `<div class="page-head"><div><h1>Recovery</h1><p>How many cancelled slots the clinic got back. Earlier weeks are sample data. This week updates live.</p></div></div>
+  return `<div class="page-head"><div><h1>Recovery</h1><p>How many cancelled slots your clinic got back this week.</p></div></div>
   <div class="kpis">${kpi('Cancelled slots', st.cancelled, 'this week')}${kpi('Refilled', st.refilled, 'this week')}${kpi('Recovery rate', st.rate + '%', 'refilled of cancelled')}${kpi('Time to refill', st.avg ? st.avg + ' min' : 'n/a', 'average, cancellation to booking')}${kpi('Offer acceptance', accRate + '%', 'accepted of all offers sent')}${kpi('Reply time', reply ? reply + ' min' : 'n/a', 'average for accepted offers')}${kpi('Unfilled', st.unfilled, 'lost appointment slots')}${kpi('Staff time saved', Math.floor(st.saved / 60) + ' h ' + (st.saved % 60) + ' min', 'demo estimate, ' + OS.STAFF_MIN_PER_REFILL + ' min per refill')}</div>
   <div class="two-col even"><section class="card"><div class="card-head"><h2>Recovery rate by week</h2></div><div class="chart"><svg viewBox="0 0 ${W} ${H + 34}" role="img" aria-label="Recovery rate by week">${grid}${bars}</svg></div></section>
   <section class="card"><div class="card-head"><h2>Offer log</h2></div><div class="table-wrap"><table class="log"><thead><tr><th>When</th><th>Slot</th><th>Patient</th><th>Result</th><th class="num">Reply</th></tr></thead><tbody>${rows}</tbody></table></div></section></div>`;
@@ -279,7 +299,7 @@ function viewSettings() {
     <li>Only the data needed to match slots is stored: name, phone, treatment, availability.</li>
     <li>Patients can download their data and leave the waiting list in their own app.</li>
     <li>Every action is written to the audit log.</li></ul>
-    <p class="note">Planned for the real product, not implemented in this demo: encryption at rest, a data processing agreement with the clinic, and a retention period.</p></div></section>`;
+</div></section>`;
 }
 function viewAudit() {
   const rows = S().audit.slice().reverse().map(a => `<tr><td class="dim nowrap">Tue ${esc(a.t)}</td><td class="nowrap">${esc(a.actor)}</td><td>${esc(a.action)}</td></tr>`).join('');
@@ -311,8 +331,6 @@ function tools() {
   <div class="drawer-body"><div class="kv"><span>Demo clock</span><strong>Tue 17 Nov, ${fmt(S().clock)}</strong></div>
     <div class="tool-row"><button class="btn" data-action="advance" data-m="5">Move 5 min forward</button><button class="btn" data-action="advance" data-m="15">Move 15 min forward</button></div>
     <p class="note">Offers expire when the clock passes their time. Moving the clock is how you show an unanswered offer.</p>
-    <div class="section-title" style="padding-left:0">Appearance</div>
-    <div class="seg" role="group" aria-label="Theme">${['auto', 'light', 'dark'].map(t => `<button type="button" data-action="theme" data-t="${t}" aria-pressed="${OS.theme.get() === t}">${t[0].toUpperCase() + t.slice(1)}</button>`).join('')}</div>
     <div class="section-title" style="padding-left:0">Show it on a phone</div>
     <div class="qr-box"><div class="qr">${qrSvg(OS.link('patient.html'))}</div><div><strong>Scan to open the patient app</strong><p class="note" style="margin-top:4px">Same room, so phone and laptop stay in sync. Room code <strong>${esc(OS.room())}</strong>.</p>
       <p class="note" style="word-break:break-all">${esc(OS.link('patient.html'))}</p></div></div>
@@ -333,7 +351,7 @@ function render() {
   let r = ROUTES[route()] ? route() : 'today';
   if (r === 'settings' && !can(role(), 'settings')) r = 'today';
   if (r === 'audit' && !can(role(), 'audit')) r = 'today';
-  const active = document.activeElement, keep = active && active.id === 'search' ? active.selectionStart : null;
+  const active = document.activeElement, keepId = active && (active.id === 'search' || active.id === 'gsearch') ? active.id : null, keep = keepId ? active.selectionStart : null;
   const body = skeleton() ? '<div class="skeleton" style="height:60px;width:50%"></div><div class="skeleton"></div><div class="skeleton" style="height:320px"></div>' : ROUTES[r]();
   app.innerHTML = shell(body, r);
   const now = { drawer: !!ui.drawer, tools: !!ui.tools, tour: !!ui.tour, add: !!ui.addOpen };
@@ -343,16 +361,16 @@ function render() {
   const sig = {}; S().slots.forEach(x => { sig[x.id] = x.status + ':' + x.offers.map(o => o.state).join(','); });
   if (prevSig) app.querySelectorAll('.blk[data-slot]').forEach(el => { const id = el.dataset.slot; if (prevSig[id] !== undefined && prevSig[id] !== sig[id]) el.classList.add('flash'); });
   prevSig = sig;
-  if (keep !== null) { const el = $('#search'); if (el) { el.focus(); el.setSelectionRange(keep, keep); } }
+  if (keep !== null) { const el = $('#' + keepId); if (el) { el.focus(); el.setSelectionRange(keep, keep); } }
 }
 OS.onChange(render);
-window.addEventListener('hashchange', () => { ui.drawer = null; ui.more = false; render(); window.scrollTo(0, 0); });
+window.addEventListener('hashchange', () => { ui.drawer = null; ui.more = false; ui.menu = null; render(); window.scrollTo(0, 0); });
 
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-action]'); if (!b) return;
   const a = b.dataset.action, d = b.dataset, who = session ? session.name + ' (' + ROLE_LABEL[role()] + ')' : '';
   if (a === 'login') { const acct = ACCOUNTS.find(x => x.role === d.role); session = acct; sessionStorage.setItem('openslot-session', JSON.stringify(acct)); location.hash = '#/today'; }
-  else if (a === 'logout') { session = null; sessionStorage.removeItem('openslot-session'); }
+  else if (a === 'logout') { ui.menu = null; session = null; sessionStorage.removeItem('openslot-session'); }
   else if (a === 'select') ui.selected = +d.slot;
   else if (a === 'cancel') { const reason = ($('#reason') || {}).value; OS.cancel(d.slot, 'reception', reason, who); return; }
   else if (a === 'offer') { OS.offer(d.slot, d.p, who); return; }
@@ -365,14 +383,17 @@ document.addEventListener('click', e => {
   else if (a === 'add-open') ui.addOpen = true;
   else if (a === 'add-close') ui.addOpen = false;
   else if (a === 'move-rule') { OS.update(st => { const i = +d.i, j = i + +d.dir; [st.rules[i], st.rules[j]] = [st.rules[j], st.rules[i]]; st.approval = { by: session.name, at: 'just now' }; st.audit.push({ t: fmt(st.clock), actor: who, action: 'Changed the order of allocation rules' }); }); return; }
-  else if (a === 'tour') { ui.tour = !ui.tour; ui.more = false; }
+  else if (a === 'menu') ui.menu = ui.menu === d.m ? null : d.m;
+  else if (a === 'menu-close') ui.menu = null;
+  else if (a === 'tour') { ui.tour = !ui.tour; ui.more = false; ui.menu = null; }
   else if (a === 'more') ui.more = !ui.more;
   else if (a === 'theme') OS.theme.set(d.t);
+  else if (a === 'accent') OS.accent.set(d.t);
   else if (a === 'tour-close') ui.tour = false;
   else if (a === 'tour-cancel4') { OS.cancel(4, 'patient', 'Feeling unwell', 'Oskar Lindner (patient app)'); ui.selected = 4; location.hash = '#/today'; return; }
   else if (a === 'tour-cancel6') { OS.cancel(6, 'reception', 'Patient called', session.name + ' (' + ROLE_LABEL[role()] + ')'); ui.selected = 6; return; }
   else if (a === 'tour-select4') { ui.selected = 4; location.hash = '#/today'; }
-  else if (a === 'tools') { ui.tools = !ui.tools; ui.more = false; }
+  else if (a === 'tools') { ui.tools = !ui.tools; ui.more = false; ui.menu = null; }
   else if (a === 'new-room') { OS.newRoom(); return; }
   else if (a === 'advance') { OS.advance(+d.m); return; }
   else if (a === 'sim-cancel') { OS.cancel(4, 'patient', 'Feeling unwell', 'Oskar Lindner (patient app)'); ui.tools = false; ui.selected = 4; location.hash = '#/today'; render(); return; }
@@ -382,7 +403,13 @@ document.addEventListener('click', e => {
   if ((a === 'select' || a === 'tour-select4') && window.innerWidth <= 1180) requestAnimationFrame(() => { const el = $('.panel'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
 });
 document.addEventListener('submit', e => {
-  if (e.target.id === 'login-form') { e.preventDefault(); const acct = ACCOUNTS.find(x => x.email === $('#email').value.trim()) || ACCOUNTS[0]; session = acct; sessionStorage.setItem('openslot-session', JSON.stringify(acct)); location.hash = '#/today'; render(); }
+  if (e.target.id === 'login-form') {
+    e.preventDefault(); const em = $('#email').value.trim().toLowerCase(), pw = $('#pw').value, err = $('#login-err');
+    const acct = ACCOUNTS.find(x => x.email === em);
+    if (!em || !pw) { err.textContent = 'Enter your email and password.'; err.hidden = false; return; }
+    if (!acct) { err.textContent = 'We could not find that account. This is a demo: open Demo access below and pick a role.'; err.hidden = false; return; }
+    session = acct; sessionStorage.setItem('openslot-session', JSON.stringify(acct)); location.hash = '#/today'; render(); return;
+  }
   if (e.target.id === 'add-form') {
     e.preventDefault();
     const name = $('#add-name').value.trim(), svc = [...document.querySelectorAll('input[name=svc]:checked')].map(x => x.value);
@@ -394,7 +421,7 @@ document.addEventListener('submit', e => {
   }
 });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { ui.drawer = null; ui.addOpen = false; ui.tools = false; ui.tour = false; ui.more = false; render(); }
+  if (e.key === 'Escape') { ui.drawer = null; ui.addOpen = false; ui.tools = false; ui.tour = false; ui.more = false; ui.menu = null; render(); }
   if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('tr[data-action="open-patient"]')) { e.preventDefault(); ui.drawer = +e.target.dataset.p; render(); }
 });
 document.addEventListener('change', e => {
@@ -411,7 +438,14 @@ document.addEventListener('change', e => {
     if (c === 'tpl') { st.settings.template = e.target.value; log('SMS template changed'); }
   });
 });
-document.addEventListener('input', e => { if (e.target.id === 'search') { ui.search = e.target.value; $('#wl-body').innerHTML = waitRows(); } });
+document.addEventListener('input', e => {
+  if (e.target.id === 'search') { ui.search = e.target.value; $('#wl-body').innerHTML = waitRows(); const g = $('#gsearch'); if (g) g.value = ui.search; }
+  if (e.target.id === 'gsearch') {
+    ui.search = e.target.value;
+    if (route() !== 'waiting') { ui.filter = 'All'; location.hash = '#/waiting'; }
+    else { $('#wl-body').innerHTML = waitRows(); const f = $('#search'); if (f) f.value = ui.search; }
+  }
+});
 if (!location.hash) location.hash = '#/today';
 render();
 })();

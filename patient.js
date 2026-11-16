@@ -8,7 +8,7 @@ try { pid = +sessionStorage.getItem('openslot-patient') || null; } catch (e) { /
 const t0 = Date.now();
 const skeleton = () => OS.sync().connecting && Date.now() - t0 < 2500;
 setTimeout(() => render(), 2600);
-const ui = { toast: null, tools: false, confirm: null, joinAvail: DAYS.map(() => ({ M: true, A: false, E: false })) };
+const ui = { menu: null, toast: null, tools: false, confirm: null, joinAvail: DAYS.map(() => ({ M: true, A: false, E: false })) };
 const asParam = new URLSearchParams(location.search).get('as');
 if (asParam && /^\d+$/.test(asParam)) { pid = +asParam; try { sessionStorage.setItem('openslot-patient', pid); } catch (e) { /* ignore */ } }
 const me = () => pid && OS.patientById(pid);
@@ -22,13 +22,15 @@ function loginView() {
   const btn = p => `<button class="acct" data-action="login" data-p="${p.id}"><strong>${esc(p.name)}</strong><span>${p.wl ? 'Wants an earlier ' + esc(p.wl.services[0].toLowerCase()) : 'Appointment today ' + (S().slots.find(s => s.patientId === p.id) ? fmt(S().slots.find(s => s.patientId === p.id).start) : '')}</span></button>`;
   return `<div class="pt-wrap"><div class="pt-login"><div class="login-brand"><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="currentColor"/><path d="M9 16a7 7 0 1 1 7 7" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/></svg><span class="wordmark">Openslot</span></div>
     <h1>Your appointments at ${CLINIC}</h1><p class="muted">Get offered earlier appointments by SMS. In the real product you open the app from the link in your SMS. In this demo, pick a patient.</p>
-    <div class="section-title" style="padding-left:0">Waiting for an earlier appointment</div>${waiting.slice(0, 6).map(btn).join('')}
-    <div class="section-title" style="padding-left:0">Has an appointment today (can cancel it)</div>${holders.slice(0, 6).map(btn).join('')}
-    <div class="section-title" style="padding-left:0">New here?</div>
-    <form id="new-form" class="pt-card"><label for="nn">Your name</label><input id="nn" required placeholder="For example Clara Neumann" autocomplete="off">
+    <form id="phone-form" class="pt-card" novalidate><label for="ph">Mobile number</label><input id="ph" type="tel" placeholder="+43 660 1234567" autocomplete="tel"><p class="form-err" id="ph-err" role="alert" hidden></p>
+      <button class="btn primary big" type="submit" style="margin-top:10px;width:100%">Send me a sign-in link</button></form>
+    <form id="new-form" class="pt-card"><h3>New here?</h3><p class="dim">Create an account to join the waiting list.</p><label for="nn">Your name</label><input id="nn" required placeholder="Full name" autocomplete="name">
       <label class="check consent"><input type="checkbox" id="nc" required> I agree that the clinic may send me appointment offers by SMS. I can withdraw this at any time.</label>
-      <button class="btn primary big" type="submit" style="margin-top:10px;width:100%">Create my account</button></form>
-    <p class="note">Student project demo, all patients are fictional. <a href="${OS.link('index.html')}">Open the clinic app</a></p></div></div>`;
+      <button class="btn big" type="submit" style="margin-top:10px;width:100%">Create account</button></form>
+    <details class="demo-access"><summary>Demo access</summary><p class="note" style="margin-top:8px">A student project with fictional patients. Pick one to sign in.</p>
+      <div class="section-title" style="padding-left:0">Waiting for an earlier appointment</div>${waiting.slice(0, 6).map(btn).join('')}
+      <div class="section-title" style="padding-left:0">Has an appointment today (can cancel it)</div>${holders.slice(0, 6).map(btn).join('')}
+      <p class="note"><a href="${OS.link('index.html')}">Open the clinic app</a></p></details></div></div>`;
 }
 
 function offerCard(s, o, full) {
@@ -109,6 +111,26 @@ function offerPage(id) {
   return `<h1 class="pt-h">Appointment offer</h1>${offerCard(found.s, found.o)}`;
 }
 
+function syncChip() {
+  const y = OS.sync();
+  if (y.connecting) return '<span class="sync wait">Connecting</span>';
+  return y.online ? `<span class="sync live" title="Shared demo room">Live · room ${esc(y.room)}</span>` : '<span class="sync off">This browser only</span>';
+}
+function popover(p) {
+  if (ui.menu === 'demo') return `<div class="pop-scrim" data-action="menu-close"></div><div class="popover" role="menu" aria-label="Demo menu">
+    <div class="pop-head"><strong>Demo</strong><span class="chip warn">Fictional data</span></div>
+    <div class="pop-row"><span>Demo clock</span><strong>Tue 17 Nov, ${fmt(S().clock)}</strong></div>
+    <div class="pop-row"><span>Shared room</span>${syncChip()}</div>
+    <button class="pop-item" role="menuitem" data-action="tools">Demo tools</button>
+    <a class="pop-item" role="menuitem" href="${OS.link('index.html')}" target="_blank" rel="noopener">Open the clinic app</a>
+    <p class="pop-note">Student project demo. Everything here is fictional and nothing is sent to anyone.</p></div>`;
+  return `<div class="pop-scrim" data-action="menu-close"></div><div class="popover" role="menu" aria-label="Account menu">
+    <div class="pop-head"><span class="avatar" aria-hidden="true">${esc(p.name.split(' ').map(x => x[0]).join('').slice(0, 2))}</span><div><strong>${esc(p.name)}</strong><br><span class="dim">${esc(p.phone)}</span></div></div>
+    <div class="pop-row col"><span>Appearance</span><div class="seg" role="group" aria-label="Theme">${['auto', 'light', 'dark'].map(t => `<button type="button" data-action="theme" data-t="${t}" aria-pressed="${OS.theme.get() === t}">${t[0].toUpperCase() + t.slice(1)}</button>`).join('')}</div></div>
+    <div class="pop-row col"><span>Accent colour</span><div class="seg" role="group" aria-label="Accent colour">${['blue', 'teal'].map(t => `<button type="button" data-action="accent" data-t="${t}" aria-pressed="${OS.accent.get() === t}">${t[0].toUpperCase() + t.slice(1)}</button>`).join('')}</div></div>
+    <a class="pop-item" role="menuitem" href="#/privacy" data-action="menu-close">Privacy and my data</a>
+    <button class="pop-item danger" role="menuitem" data-action="logout">Sign out</button></div>`;
+}
 function render() {
   const app = $('#app');
   if (!pid || !me()) { app.innerHTML = loginView(); return; }
@@ -118,21 +140,23 @@ function render() {
   const p = me(), unread = S().outbox.filter(m => m.pid === pid).length;
   const tab = (k, l, d) => `<a href="#/${k}" ${(parts[0] === k || (k === 'home' && !['availability', 'messages', 'privacy'].includes(parts[0]))) ? 'aria-current="page"' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>${l}</a>`;
   app.innerHTML = `<div class="pt-wrap"><header class="pt-top"><div class="brand"><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="currentColor"/><path d="M9 16a7 7 0 1 1 7 7" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/></svg><span class="wordmark">Openslot</span></div>
-    <div class="topbar-right"><span class="sync ${OS.sync().connecting ? 'wait' : OS.sync().online ? 'live' : 'off'}" title="Room ${esc(OS.room())}">${OS.sync().connecting ? 'Connecting' : OS.sync().online ? 'Live' : 'This browser only'}</span><button class="btn ghost small" data-action="tools">Tools</button><button class="btn ghost small" data-action="logout">Switch</button></div></header>
+    <div class="topbar-right"><button class="icon-btn" data-action="menu" data-m="demo" aria-label="Demo menu" aria-haspopup="menu" aria-expanded="${ui.menu === 'demo'}" title="Demo menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01" stroke-width="3"/></svg></button>
+      <button class="avatar-btn" data-action="menu" data-m="user" aria-label="Account menu" aria-haspopup="menu" aria-expanded="${ui.menu === 'user'}"><span class="avatar" aria-hidden="true">${esc(p.name.split(' ').map(x => x[0]).join('').slice(0, 2))}</span></button></div></header>
     ${(!OS.sync().online && !OS.sync().connecting) ? '<div class="offline-banner" role="status">Working in this browser only right now.</div>' : ''}<main id="main" class="pt-main">${skeleton() ? '<div class="skeleton"></div><div class="skeleton" style="height:140px"></div>' : body}</main>
     <nav class="pt-tabs" aria-label="Main">${tab('home', 'Home', 'M3 11l9-8 9 8v10H3z')}${p.wl ? tab('availability', 'Availability', 'M3 5h18v16H3zM3 10h18M8 3v4M16 3v4') : ''}${tab('messages', 'Messages' + (unread ? ' (' + unread + ')' : ''), 'M4 5h16v11H8l-4 4z')}${tab('privacy', 'Privacy', 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z')}</nav></div>
+    ${ui.menu ? popover(p) : ''}
     ${ui.confirm ? `<div class="scrim" data-action="confirm-no"></div><div class="modal" role="dialog" aria-modal="true"><h2>Cancel your appointment?</h2><div class="field" style="margin-top:8px"><label for="reason">Reason (optional)</label><select id="reason"><option>Feeling unwell</option><option>Schedule conflict</option><option>No longer needed</option><option>Other</option></select></div>
       <div class="modal-foot"><button class="btn" data-action="confirm-no">Keep it</button><button class="btn danger" data-action="confirm-yes">Cancel appointment</button></div></div>` : ''}
-    ${ui.tools ? `<div class="scrim" data-action="tools"></div><aside class="drawer small"><div class="drawer-head"><div><h2>Demo tools</h2><p class="dim">Clock: Tue 17 Nov, ${fmt(S().clock)}</p></div><button class="btn ghost small" data-action="tools">Close</button></div><div class="drawer-body"><div class="tool-row"><button class="btn" data-action="advance" data-m="5">+5 min</button><button class="btn" data-action="advance" data-m="15">+15 min</button></div><p class="note">Move the clock to let an offer expire.</p><div class="section-title" style="padding-left:0">Appearance</div><div class="seg" role="group" aria-label="Theme">${['auto', 'light', 'dark'].map(t => `<button type="button" data-action="theme" data-t="${t}" aria-pressed="${OS.theme.get() === t}">${t[0].toUpperCase() + t.slice(1)}</button>`).join('')}</div><div style="height:14px"></div><a class="btn block" style="text-align:center;text-decoration:none" href="${OS.link('index.html')}" target="_blank" rel="noopener">Open the clinic app</a><button class="btn danger block" style="margin-top:8px" data-action="reset">Reset all demo data</button></div></aside>` : ''}
+    ${ui.tools ? `<div class="scrim" data-action="tools"></div><aside class="drawer small"><div class="drawer-head"><div><h2>Demo tools</h2><p class="dim">Clock: Tue 17 Nov, ${fmt(S().clock)}</p></div><button class="btn ghost small" data-action="tools">Close</button></div><div class="drawer-body"><div class="tool-row"><button class="btn" data-action="advance" data-m="5">+5 min</button><button class="btn" data-action="advance" data-m="15">+15 min</button></div><p class="note">Move the clock to let an offer expire.</p><a class="btn block" style="text-align:center;text-decoration:none" href="${OS.link('index.html')}" target="_blank" rel="noopener">Open the clinic app</a><button class="btn danger block" style="margin-top:8px" data-action="reset">Reset all demo data</button></div></aside>` : ''}
     ${ui.toast ? `<div class="toast" role="status">${esc(ui.toast)}</div>` : ''}`;
 }
 OS.onChange(render);
-window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
+window.addEventListener('hashchange', () => { ui.menu = null; render(); window.scrollTo(0, 0); });
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-action]'); if (!b) return; const a = b.dataset.action, d = b.dataset;
   const name = me() ? me().name + ' (patient app)' : '';
   if (a === 'login') { pid = +d.p; sessionStorage.setItem('openslot-patient', pid); location.hash = '#/' + (d.go || 'home'); }
-  else if (a === 'logout') { pid = null; sessionStorage.removeItem('openslot-patient'); location.hash = '#/home'; }
+  else if (a === 'logout') { ui.menu = null; pid = null; sessionStorage.removeItem('openslot-patient'); location.hash = '#/home'; }
   else if (a === 'accept' || a === 'decline') {
     const res = OS.respond(d.o, a, name);
     if (!res.ok) toast(res.why); else toast(a === 'accept' ? 'You are booked. See you soon.' : 'Thanks, you stay on the list.');
@@ -145,8 +169,11 @@ document.addEventListener('click', e => {
   else if (a === 'leave') { OS.update(st => { const p = OS.patientById(pid); p.wl.status = 'removed'; st.audit.push({ t: fmt(st.clock), actor: name, action: 'Left the waiting list' }); }); toast('You left the waiting list'); return; }
   else if (a === 'download') { const p = me(), data = { name: p.name, phone: p.phone, consent: p.consent, waitingList: p.wl, offers: myOffers().map(x => ({ slot: x.s.service + ' ' + fmt(x.s.start), state: x.o.state })) }, blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), l = document.createElement('a'); l.href = URL.createObjectURL(blob); l.download = 'my-openslot-data.json'; l.click(); }
   else if (a === 'jt') { ui.joinAvail[+d.d][d.k] = !ui.joinAvail[+d.d][d.k]; }
-  else if (a === 'tools') ui.tools = !ui.tools;
+  else if (a === 'menu') ui.menu = ui.menu === d.m ? null : d.m;
+  else if (a === 'menu-close') ui.menu = null;
+  else if (a === 'tools') { ui.tools = !ui.tools; ui.menu = null; }
   else if (a === 'theme') OS.theme.set(d.t);
+  else if (a === 'accent') OS.accent.set(d.t);
   else if (a === 'ics') { const sl = OS.slotById(d.s), blob = new Blob([OS.ics(sl)], { type: 'text/calendar' }), l = document.createElement('a'); l.href = URL.createObjectURL(blob); l.download = 'appointment.ics'; l.click(); }
   else if (a === 'advance') { OS.advance(+d.m); return; }
   else if (a === 'reset') { OS.reset(); ui.tools = false; toast('Demo data reset'); return; }
@@ -160,6 +187,10 @@ document.addEventListener('change', e => {
   toast('Saved');
 });
 document.addEventListener('submit', e => {
+  if (e.target.id === 'phone-form') {
+    e.preventDefault(); const v = $('#ph').value.replace(/\D/g, ''), err = $('#ph-err');
+    err.textContent = v.length < 8 ? 'Enter your mobile number.' : 'In this demo no real SMS is sent. Open Demo access below and pick a patient.'; err.hidden = false; return;
+  }
   if (e.target.id === 'new-form') {
     e.preventDefault(); const name = $('#nn').value.trim(); if (!name) return;
     OS.update(st => { const id = st.nextId++; pid = id; st.patients.push({ id, name, phone: '+43 660 ••• ' + String(100 + id).slice(-3), consent: { sms: true, at: 'today' }, appt: null, current: null, wl: null }); st.audit.push({ t: fmt(st.clock), actor: name + ' (patient app)', action: 'Created an account and gave SMS consent' }); });
@@ -171,7 +202,7 @@ document.addEventListener('submit', e => {
     toast('You are on the list');
   }
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') { ui.confirm = null; ui.tools = false; render(); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { ui.confirm = null; ui.tools = false; ui.menu = null; render(); } });
 if (!location.hash) location.hash = '#/home';
 render();
 })();
