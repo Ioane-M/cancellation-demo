@@ -10,7 +10,7 @@ const ACCOUNTS = [
 const ROLE_LABEL = { reception: 'Reception', dentist: 'Dentist', owner: 'Owner' };
 let session = null;
 try { session = JSON.parse(sessionStorage.getItem('openslot-session')); } catch (e) { /* none */ }
-const ui = { selected: null, filter: 'All', search: '', drawer: null, tools: false, addOpen: false, toast: null };
+const ui = { tour: false, selected: null, filter: 'All', search: '', drawer: null, tools: false, addOpen: false, toast: null };
 const role = () => session && session.role;
 const S = () => OS.state();
 
@@ -62,7 +62,7 @@ function shell(body, route) {
     <div class="brand"><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="currentColor"/><path d="M9 16a7 7 0 1 1 7 7" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/></svg>
       <span class="wordmark">Openslot</span><span class="divider" aria-hidden="true"></span><span class="clinic">${CLINIC} <span class="muted">Vienna</span></span></div>
     <div class="topbar-right"><span class="clock">Tue 17 Nov, ${fmt(S().clock)}</span>${syncChip()}<span class="demo-tag">Demo with fake data</span>
-      <button class="btn small" data-action="tools">Demo tools</button>
+      <button class="btn small" data-action="tour">Walkthrough</button><button class="btn small" data-action="tools">Demo tools</button>
       <div class="user"><span class="avatar" aria-hidden="true">${esc(session.name.split(' ').map(x => x[0]).join('').slice(0, 2))}</span><div class="user-t"><strong>${esc(session.name)}</strong><span>${ROLE_LABEL[role()]}</span></div>
       <button class="btn ghost small" data-action="logout">Sign out</button></div></div>
   </header>
@@ -70,7 +70,7 @@ function shell(body, route) {
     ${nav.map(([k, l, d]) => `<a href="#/${k}" ${k === route ? 'aria-current="page"' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>${l}${k === 'today' && st.open ? `<span class="badge">${st.open}</span>` : ''}</a>`).join('')}
     <p class="nav-note">Student project demo. No real patients, no real messages are sent.</p></nav>
     <main id="main" tabindex="-1">${body}</main></div>
-  ${ui.drawer ? drawer() : ''}${ui.addOpen ? addModal() : ''}${ui.tools ? tools() : ''}
+  ${ui.drawer ? drawer() : ''}${ui.addOpen ? addModal() : ''}${ui.tools ? tools() : ''}${ui.tour ? tour() : ''}
   ${ui.toast ? `<div class="toast" role="status">${esc(ui.toast)}</div>` : ''}`;
 }
 
@@ -225,9 +225,10 @@ function viewRecovery() {
   const bars = weeks.map((x, i) => { const pct = x.c ? x.r / x.c : 0, h = Math.round(pct * (H - 40)), bx = left + i * (bw + gap) + gap / 2, by = H - h;
     return `<rect x="${bx}" y="${by}" width="${bw}" height="${h}" rx="4" fill="${x.live ? '#0b6e68' : '#9cc9c5'}"/><text x="${bx + bw / 2}" y="${by - 8}" text-anchor="middle" font-size="13" font-weight="600" fill="#17212b">${Math.round(pct * 100)}%</text><text x="${bx + bw / 2}" y="${H + 20}" text-anchor="middle" font-size="12" fill="#5f6b78">${x.w}${x.live ? ' (live)' : ''}</text>`; }).join('');
   const grid = [0, 50, 100].map(v => { const y = H - Math.round(v / 100 * (H - 40)); return `<line x1="${left - 6}" x2="${W}" y1="${y}" y2="${y}" stroke="#e2e6ea"/><text x="${left - 12}" y="${y + 4}" text-anchor="end" font-size="11" fill="#5f6b78">${v}%</text>`; }).join('');
-  const rows = OS.offerLog().slice(0, 10).map(l => `<tr><td class="dim">${esc(l.time)}</td><td>${esc(l.slot)}</td><td>${esc(l.who)}</td><td><span class="chip ${l.result === 'accepted' ? 'ok' : l.result === 'declined' ? 'bad' : 'neutral'}">${l.result}</span></td><td class="num">${l.mins} min</td></tr>`).join('');
+  const all = OS.offerLog(), acc = all.filter(l => l.result === 'accepted'), accRate = all.length ? Math.round(100 * acc.length / all.length) : 0, reply = acc.length ? Math.round(acc.reduce((a, l) => a + l.mins, 0) / acc.length) : 0;
+  const rows = all.slice(0, 10).map(l => `<tr><td class="dim">${esc(l.time)}</td><td>${esc(l.slot)}</td><td>${esc(l.who)}</td><td><span class="chip ${l.result === 'accepted' ? 'ok' : l.result === 'declined' ? 'bad' : 'neutral'}">${l.result}</span></td><td class="num">${l.mins} min</td></tr>`).join('');
   return `<div class="page-head"><div><h1>Recovery</h1><p>How many cancelled slots the clinic got back. Earlier weeks are sample data. This week updates live.</p></div></div>
-  <div class="kpis">${kpi('Cancelled slots', st.cancelled, 'this week')}${kpi('Refilled', st.refilled, 'this week')}${kpi('Recovery rate', st.rate + '%', 'refilled of cancelled')}${kpi('Time to refill', st.avg ? st.avg + ' min' : 'n/a', 'average, cancellation to booking')}${kpi('Unfilled', st.unfilled, 'lost appointment slots')}${kpi('Staff time saved', Math.floor(st.saved / 60) + ' h ' + (st.saved % 60) + ' min', 'demo estimate, ' + OS.STAFF_MIN_PER_REFILL + ' min per refill')}</div>
+  <div class="kpis">${kpi('Cancelled slots', st.cancelled, 'this week')}${kpi('Refilled', st.refilled, 'this week')}${kpi('Recovery rate', st.rate + '%', 'refilled of cancelled')}${kpi('Time to refill', st.avg ? st.avg + ' min' : 'n/a', 'average, cancellation to booking')}${kpi('Offer acceptance', accRate + '%', 'accepted of all offers sent')}${kpi('Reply time', reply ? reply + ' min' : 'n/a', 'average for accepted offers')}${kpi('Unfilled', st.unfilled, 'lost appointment slots')}${kpi('Staff time saved', Math.floor(st.saved / 60) + ' h ' + (st.saved % 60) + ' min', 'demo estimate, ' + OS.STAFF_MIN_PER_REFILL + ' min per refill')}</div>
   <div class="two-col even"><section class="card"><div class="card-head"><h2>Recovery rate by week</h2></div><div class="chart"><svg viewBox="0 0 ${W} ${H + 34}" role="img" aria-label="Recovery rate by week">${grid}${bars}</svg></div></section>
   <section class="card"><div class="card-head"><h2>Offer log</h2></div><div class="table-wrap"><table class="log"><thead><tr><th>When</th><th>Slot</th><th>Patient</th><th>Result</th><th class="num">Reply</th></tr></thead><tbody>${rows}</tbody></table></div></section></div>`;
 }
@@ -253,6 +254,25 @@ function viewAudit() {
   const rows = S().audit.slice().reverse().map(a => `<tr><td class="dim nowrap">Tue ${esc(a.t)}</td><td class="nowrap">${esc(a.actor)}</td><td>${esc(a.action)}</td></tr>`).join('');
   return `<div class="page-head"><div><h1>Audit log</h1><p>Who did what and when. Offers, answers, cancellations and settings changes.</p></div><button class="btn" data-action="csv">Download CSV</button></div>
   <section class="card"><div class="table-wrap"><table><thead><tr><th>Time</th><th>Who</th><th>What</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
+}
+function tour() {
+  const sl = S().slots, any = f => sl.some(f), s4 = OS.slotById(4), s6 = OS.slotById(6);
+  const steps = [
+    { t: 'A patient cancels', why: 'Oskar Lindner cancels his 10:00 hygiene slot in his own app.', done: any(s => s.cancelledAt != null),
+      act: s4.status === 'booked' ? '<button class="btn small primary" data-action="tour-cancel4">Do it for me</button>' : '' },
+    { t: 'Openslot texts the best match', why: 'No staff action. Open the slot to see who is next and why, and the SMS that went out.', done: any(s => s.offers.length),
+      act: '<button class="btn small" data-action="tour-select4">Show the slot</button>' },
+    { t: 'The patient answers on their phone', why: 'Open the patient app as Anna Berger, read the offer, tap Take this appointment. Use the QR code in Demo tools to do it on a real phone.', done: any(s => s.offers.some(o => o.state === 'accepted' || o.state === 'declined')),
+      act: `<a class="btn small" href="${OS.link('patient.html')}&as=1" target="_blank" rel="noopener">Open patient app as Anna</a>` },
+    { t: 'The slot turns green', why: 'Refilled in minutes, nobody phoned around. Check the audit log to see who did what.', done: any(s => s.status === 'refilled'), act: '' },
+    { t: 'Show an offer nobody answers', why: 'Cancel Karl Steiner\'s 13:00 slot, then move the clock 15 minutes. The offer expires and the next patient is contacted automatically.', done: any(s => s.offers.some(o => o.state === 'expired')),
+      act: (s6.status === 'booked' ? '<button class="btn small" data-action="tour-cancel6">Cancel the 13:00 slot</button>' : '') + '<button class="btn small" data-action="advance" data-m="15">Move 15 min</button>' },
+    { t: 'Show the numbers', why: 'Recovery rate, time to refill, acceptance rate, staff time saved. These are the success metrics of the pitch.', done: false, act: '<a class="btn small" href="#/recovery" data-action="tour-close">Open Recovery</a>' },
+  ];
+  const n = steps.filter(x => x.done).length;
+  return `<div class="scrim" data-action="tour"></div><aside class="drawer small" role="dialog" aria-label="Pitch walkthrough"><div class="drawer-head"><div><h2>Pitch walkthrough</h2><p class="dim">${n} of ${steps.length - 1} steps done. Steps tick off by themselves.</p></div><button class="btn ghost small" data-action="tour">Close</button></div>
+  <div class="drawer-body"><ol class="tour">${steps.map((x, i) => `<li class="${x.done ? 'done' : ''}"><span class="tn">${x.done ? '✓' : i + 1}</span><div><strong>${x.t}</strong><p>${x.why}</p><div class="tour-act">${x.act}</div></div></li>`).join('')}</ol>
+    <p class="note">Start a fresh demo room in Demo tools to run the story again.</p></div></aside>`;
 }
 function tools() {
   const s4 = OS.slotById(4);
@@ -303,6 +323,11 @@ document.addEventListener('click', e => {
   else if (a === 'add-open') ui.addOpen = true;
   else if (a === 'add-close') ui.addOpen = false;
   else if (a === 'move-rule') { OS.update(st => { const i = +d.i, j = i + +d.dir; [st.rules[i], st.rules[j]] = [st.rules[j], st.rules[i]]; st.approval = { by: session.name, at: 'just now' }; st.audit.push({ t: fmt(st.clock), actor: who, action: 'Changed the order of allocation rules' }); }); return; }
+  else if (a === 'tour') ui.tour = !ui.tour;
+  else if (a === 'tour-close') ui.tour = false;
+  else if (a === 'tour-cancel4') { OS.cancel(4, 'patient', 'Feeling unwell', 'Oskar Lindner (patient app)'); ui.selected = 4; location.hash = '#/today'; return; }
+  else if (a === 'tour-cancel6') { OS.cancel(6, 'reception', 'Patient called', session.name + ' (' + ROLE_LABEL[role()] + ')'); ui.selected = 6; return; }
+  else if (a === 'tour-select4') { ui.selected = 4; location.hash = '#/today'; }
   else if (a === 'tools') ui.tools = !ui.tools;
   else if (a === 'new-room') { OS.newRoom(); return; }
   else if (a === 'advance') { OS.advance(+d.m); return; }
@@ -324,7 +349,7 @@ document.addEventListener('submit', e => {
   }
 });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { ui.drawer = null; ui.addOpen = false; ui.tools = false; render(); }
+  if (e.key === 'Escape') { ui.drawer = null; ui.addOpen = false; ui.tools = false; ui.tour = false; render(); }
   if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('tr[data-action="open-patient"]')) { e.preventDefault(); ui.drawer = +e.target.dataset.p; render(); }
 });
 document.addEventListener('change', e => {

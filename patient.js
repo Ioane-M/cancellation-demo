@@ -5,7 +5,9 @@ const $ = s => document.querySelector(s);
 const S = () => OS.state();
 let pid = null;
 try { pid = +sessionStorage.getItem('openslot-patient') || null; } catch (e) { /* none */ }
-const ui = { toast: null, tools: false, confirm: null };
+const ui = { toast: null, tools: false, confirm: null, joinAvail: DAYS.map(() => ({ M: true, A: false, E: false })) };
+const asParam = new URLSearchParams(location.search).get('as');
+if (asParam && /^\d+$/.test(asParam)) { pid = +asParam; try { sessionStorage.setItem('openslot-patient', pid); } catch (e) { /* ignore */ } }
 const me = () => pid && OS.patientById(pid);
 function toast(msg) { ui.toast = msg; render(); clearTimeout(toast.t); toast.t = setTimeout(() => { ui.toast = null; render(); }, 2400); }
 const route = () => (location.hash.replace('#/', '') || 'home');
@@ -19,6 +21,10 @@ function loginView() {
     <h1>Your appointments at ${CLINIC}</h1><p class="muted">Get offered earlier appointments by SMS. In the real product you open the app from the link in your SMS. In this demo, pick a patient.</p>
     <div class="section-title" style="padding-left:0">Waiting for an earlier appointment</div>${waiting.slice(0, 6).map(btn).join('')}
     <div class="section-title" style="padding-left:0">Has an appointment today (can cancel it)</div>${holders.slice(0, 6).map(btn).join('')}
+    <div class="section-title" style="padding-left:0">New here?</div>
+    <form id="new-form" class="pt-card"><label for="nn">Your name</label><input id="nn" required placeholder="For example Clara Neumann" autocomplete="off">
+      <label class="check consent"><input type="checkbox" id="nc" required> I agree that the clinic may send me appointment offers by SMS. I can withdraw this at any time.</label>
+      <button class="btn primary big" type="submit" style="margin-top:10px;width:100%">Create my account</button></form>
     <p class="note">Student project demo, all patients are fictional. <a href="${OS.link('index.html')}">Open the clinic app</a></p></div></div>`;
 }
 
@@ -33,6 +39,16 @@ function offerCard(s, o, full) {
     <p class="note">If you take it, your later appointment (${esc(me().current || 'none')}) is released for other patients.</p></div>`;
 }
 
+function joinCard() {
+  const head = ['<div></div>', ...DAYS.map(d => `<div class="h">${d}</div>`)].join('');
+  const body = PARTS.map(pt => `<div class="r">${pt.name}<small>${pt.hours}</small></div>` + DAYS.map((d, i) => `<button type="button" data-action="jt" data-d="${i}" data-k="${pt.k}" aria-pressed="${ui.joinAvail[i][pt.k]}" aria-label="${d} ${pt.name}">${ui.joinAvail[i][pt.k] ? 'Yes' : '–'}</button>`).join('')).join('');
+  return `<section class="pt-card"><h3>Get an earlier appointment</h3><p class="dim">Tell us what you need and when you can come. When a slot frees up that fits, we text you.</p>
+    <form id="join-form"><fieldset><legend>Treatment</legend>${OS.SERVICES.map((sv, i) => `<label class="check"><input type="checkbox" name="svc" value="${esc(sv)}" ${i === 0 ? 'checked' : ''}> ${esc(sv)}</label>`).join('')}</fieldset>
+      <div class="avail" role="group" aria-label="Availability" style="margin:12px 0">${head}${body}</div>
+      <div class="field" style="margin-top:0"><label for="jn">How much notice do you need?</label><select id="jn">${NOTICES.map(n => `<option value="${n.v}" ${n.v === 60 ? 'selected' : ''}>${n.l}</option>`).join('')}</select></div>
+      <label class="check consent"><input type="checkbox" id="jc" required> I agree to receive offers by SMS.</label>
+      <button class="btn primary big" type="submit" style="margin-top:12px;width:100%">Join the list</button></form></section>`;
+}
 function homeView() {
   const p = me(), offers = myOffers(), pend = offers.filter(x => x.o.state === 'pending');
   const slot = S().slots.find(s => s.patientId === p.id);
@@ -54,6 +70,7 @@ function homeView() {
   } else if (p.wl && p.wl.status === 'removed') {
     h += `<section class="pt-card"><h3>You left the waiting list</h3><p class="dim">You will not receive offers anymore.</p></section>`;
   }
+  if ((!p.wl || p.wl.status === 'removed') && !p.appt && !S().slots.some(s => s.patientId === p.id)) h += joinCard();
   const hist = offers.filter(x => x.o.state !== 'pending');
   if (hist.length) h += `<div class="section-title" style="padding-left:2px">Earlier offers</div>` + hist.map(x => offerCard(x.s, x.o)).join('');
   return h;
@@ -121,6 +138,7 @@ document.addEventListener('click', e => {
   else if (a === 'toggle') { OS.update(st => { const p = OS.patientById(pid); p.wl.avail[+d.d][d.k] = !p.wl.avail[+d.d][d.k]; st.audit.push({ t: fmt(st.clock), actor: name, action: 'Updated own availability' }); }); toast('Saved'); return; }
   else if (a === 'leave') { OS.update(st => { const p = OS.patientById(pid); p.wl.status = 'removed'; st.audit.push({ t: fmt(st.clock), actor: name, action: 'Left the waiting list' }); }); toast('You left the waiting list'); return; }
   else if (a === 'download') { const p = me(), data = { name: p.name, phone: p.phone, consent: p.consent, waitingList: p.wl, offers: myOffers().map(x => ({ slot: x.s.service + ' ' + fmt(x.s.start), state: x.o.state })) }, blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), l = document.createElement('a'); l.href = URL.createObjectURL(blob); l.download = 'my-openslot-data.json'; l.click(); }
+  else if (a === 'jt') { ui.joinAvail[+d.d][d.k] = !ui.joinAvail[+d.d][d.k]; }
   else if (a === 'tools') ui.tools = !ui.tools;
   else if (a === 'advance') { OS.advance(+d.m); return; }
   else if (a === 'reset') { OS.reset(); ui.tools = false; toast('Demo data reset'); return; }
@@ -132,6 +150,18 @@ document.addEventListener('change', e => {
     if (c === 'notice') { p.wl.notice = +e.target.value; st.audit.push({ t: fmt(st.clock), actor: name, action: 'Updated own notice needed' }); }
     if (c === 'consent') { p.consent.sms = e.target.checked; st.audit.push({ t: fmt(st.clock), actor: name, action: 'SMS consent ' + (e.target.checked ? 'given' : 'withdrawn') }); if (!e.target.checked && p.wl) p.wl.status = 'removed'; } });
   toast('Saved');
+});
+document.addEventListener('submit', e => {
+  if (e.target.id === 'new-form') {
+    e.preventDefault(); const name = $('#nn').value.trim(); if (!name) return;
+    OS.update(st => { const id = st.nextId++; pid = id; st.patients.push({ id, name, phone: '+43 660 ••• ' + String(100 + id).slice(-3), consent: { sms: true, at: 'today' }, appt: null, current: null, wl: null }); st.audit.push({ t: fmt(st.clock), actor: name + ' (patient app)', action: 'Created an account and gave SMS consent' }); });
+    try { sessionStorage.setItem('openslot-patient', pid); } catch (err) { /* ignore */ } location.hash = '#/home'; toast('Welcome, ' + name.split(' ')[0]); render();
+  }
+  if (e.target.id === 'join-form') {
+    e.preventDefault(); const svc = [...document.querySelectorAll('input[name=svc]:checked')].map(x => x.value); if (!svc.length) { toast('Pick at least one treatment'); return; }
+    OS.update(st => { const q = OS.patientById(pid); q.wl = { services: svc, wait: 0, notice: +$('#jn').value, avail: ui.joinAvail.map(x => ({ ...x })), flag: false, offers: 0, status: 'waiting' }; q.current = q.current || 'Tue 8 Dec, 10:00'; q.consent = { sms: true, at: 'today' }; st.audit.push({ t: fmt(st.clock), actor: q.name + ' (patient app)', action: 'Joined the waiting list for ' + svc.join(', ') + ' with SMS consent' }); });
+    toast('You are on the list');
+  }
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') { ui.confirm = null; ui.tools = false; render(); } });
 if (!location.hash) location.hash = '#/home';

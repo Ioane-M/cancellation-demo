@@ -10,6 +10,9 @@ A working demo of **Openslot**, a cancellation recovery product for independent 
 - Both talk to a **Supabase** database (Postgres in the cloud). A *room* is one shared demo, identified by `?room=abc123` in the link. Open the patient app on your phone with the same room code (Demo tools shows a QR code) and every change appears on every device within about a second.
 - If Supabase is not reachable, the demo falls back to this browser only (tabs still sync). The top bar shows **Live** or **This browser only**.
 
+## Presenting it
+Sign in to the clinic app and press **Walkthrough** in the top bar. It lists six steps for the pitch and ticks each one off by itself as you do it, on any device. Steps have shortcuts ("Do it for me", "Open patient app as Anna"). **Demo tools** has a QR code for the phone, a clock you can move forward, and a button to start a fresh room.
+
 ## Try the full loop (about 2 minutes)
 1. Open the clinic app, sign in as **Reception**.
 2. In another window open the patient app and pick **Oskar Lindner** (appointment today 10:00). Press **Cancel appointment**.
@@ -23,12 +26,12 @@ A working demo of **Openslot**, a cancellation recovery product for independent 
 - **Waiting list**: add patients (with SMS consent), edit availability, clinical flag (dentist only), remove.
 - **Messages**: every SMS Openslot sends.
 - **Allocation rules**: priority order, only a dentist can change it. The approval is shown.
-- **Recovery**: recovery rate, time to refill, unfilled slots, staff time saved (demo assumption), weekly chart.
+- **Recovery**: recovery rate, time to refill, offer acceptance rate, reply time, unfilled slots, staff time saved (demo assumption), weekly chart.
 - **Settings (owner)**: automatic offers on or off, offer validity, cut-off before the slot starts, SMS template with live preview.
 - **Audit log** (dentist, owner): who did what and when, CSV download.
 
 ## What is in the patient app
-Offer page (the link in the SMS), countdown, accept or decline, cancel own appointment, availability profile, SMS inbox, privacy page with consent, data download and leave-the-list.
+**Create an account and join the waiting list** (treatment, availability, notice, SMS consent), offer page (the link in the SMS), countdown, accept or decline, cancel own appointment, availability profile, SMS inbox, privacy page with consent, data download and leave-the-list.
 
 ## Run locally
 No build step: open `index.html`, or run `python3 -m http.server` in this folder.

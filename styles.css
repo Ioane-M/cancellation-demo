@@ -360,3 +360,14 @@ main{min-width:0}
   .toolbar input[type=search]{width:100%}
 }
 td.num,th.num{white-space:nowrap}
+
+.kpis{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media (max-width:1180px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.tour{list-style:none;margin:0;padding:0}
+.tour li{display:grid;grid-template-columns:30px 1fr;gap:12px;padding:14px 0;border-top:1px solid var(--line)}
+.tour li:first-child{border-top:0}
+.tn{width:28px;height:28px;border-radius:50%;background:#eef0f2;color:var(--muted);display:grid;place-items:center;font-weight:700;font-size:13px}
+.tour li.done .tn{background:var(--ok);color:#fff}
+.tour p{margin:3px 0 8px;color:var(--muted);font-size:13px}
+.tour-act{display:flex;gap:8px;flex-wrap:wrap}
+.tour li.done strong{color:var(--ok)}
