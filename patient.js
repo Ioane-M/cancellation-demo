@@ -22,7 +22,8 @@ function go(r, replace) {
   if (location.pathname + location.search + location.hash !== u) history[replace ? 'replaceState' : 'pushState'](null, '', u);
   ui.menu = null; render(); if (!replace) window.scrollTo(0, 0);
 }
-const myOffers = () => { const out = []; S().slots.forEach(s => s.offers.forEach(o => { if (o.pid === pid) out.push({ s, o }); })); return out.sort((a, b) => b.o.sentAt - a.o.sentAt); };
+const docSelect = (id, val, attr) => `<div class="field" style="margin-top:0"><label for="${id}">Do you prefer one doctor?</label><select id="${id}" ${attr || ''}><option value="">Any doctor</option>${S().practitioners.map(q => `<option value="${esc(q.name)}" ${q.name === val ? 'selected' : ''}>${esc(q.name)}</option>`).join('')}</select></div>`;
+const myOffers = () => { const out = []; S().slots.forEach(s => s.offers.forEach(o => { if (o.pid === pid && o.state !== 'review' && o.state !== 'rejected') out.push({ s, o }); })); return out.sort((a, b) => b.o.sentAt - a.o.sentAt); };
 
 function loginView() {
   const waiting = S().patients.filter(p => p.wl && p.wl.status !== 'removed');
@@ -59,6 +60,7 @@ function joinCard() {
   return `<section class="pt-card"><h3>Get an earlier appointment</h3><p class="dim">Tell us what you need and when you can come. When a slot frees up that fits, we text you.</p>
     <form id="join-form"><fieldset><legend>Treatment</legend>${OS.services().map((sv, i) => `<label class="check"><input type="checkbox" name="svc" value="${esc(sv)}" ${i === 0 ? 'checked' : ''}> ${esc(sv)}</label>`).join('')}</fieldset>
       <div class="avail" role="group" aria-label="Availability" style="margin:12px 0">${head}${body}</div>
+      ${docSelect('jd', '')}
       <div class="field" style="margin-top:0"><label for="jn">How much notice do you need?</label><select id="jn">${NOTICES.map(n => `<option value="${n.v}" ${n.v === 60 ? 'selected' : ''}>${n.l}</option>`).join('')}</select></div>
       <label class="check consent"><input type="checkbox" id="jc" required> I agree to receive offers by SMS.</label>
       <button class="btn primary big" type="submit" style="margin-top:12px;width:100%">Join the list</button></form></section>`;
@@ -78,7 +80,9 @@ function homeView() {
     h += `<section class="pt-card"><span class="chip neutral">Cancelled</span><h3>${esc(slot.service)} at ${fmt(slot.start)}</h3><p class="dim">You cancelled this appointment. We sent you a confirmation by SMS. Please call the clinic to book a new one.</p></section>`;
   }
   if (p.wl && p.wl.status === 'waiting') {
-    h += `<section class="pt-card"><h3>Earlier appointment</h3><p>You are on the list for <strong>${p.wl.services.map(esc).join(', ')}</strong> since ${p.wl.wait} days.</p>
+    const av = OS.availStatus(p);
+    if (av.state !== 'ok') h += `<section class="pt-card ${av.state === 'expired' ? '' : 'offer'}"><span class="chip ${av.state === 'expired' ? 'bad' : 'warn'}">${av.state === 'expired' ? 'Availability expired' : 'Please confirm your availability'}</span><h3>${av.state === 'expired' ? 'We paused your offers' : 'Is your availability still right?'}</h3><p class="dim">${av.state === 'expired' ? 'Your availability is older than ' + OS.AVAIL_DAYS + ' days, so we do not send offers. Confirm it to get offers again.' : 'It expires in ' + av.left + ' days. If nothing changed, one tap keeps your place.'}</p><div class="pt-actions"><button class="btn primary big" data-action="confirm-avail">Nothing changed, confirm</button><a class="btn big" href="${pathFor('availability')}" data-nav="availability">Change it</a></div></section>`;
+    h += `<section class="pt-card"><h3>Earlier appointment</h3><p>You are on the list for <strong>${p.wl.services.map(esc).join(', ')}</strong> since ${p.wl.wait} days. ${p.wl.doctor ? 'You prefer <strong>' + esc(p.wl.doctor) + '</strong>.' : 'Any doctor is fine.'}</p>
       <p class="dim">Current appointment: ${esc(p.current)}</p><div class="kv"><span>You told us you can come on</span><div class="days">${p.wl.avail.map((d, i) => `<span class="${d.M || d.A || d.E ? 'on' : ''}">${DAYS[i]}</span>`).join('')}</div></div>
       <a class="btn" href="${pathFor('availability')}" data-nav="availability">Change when I can come</a></section>`;
   } else if (p.wl && p.wl.status === 'booked' && !accepted) {
@@ -97,11 +101,14 @@ function availabilityView() {
   const body = PARTS.map(pt => `<div class="r">${pt.name}<small>${pt.hours}</small></div>` + DAYS.map((d, i) => `<button type="button" data-action="toggle" data-d="${i}" data-k="${pt.k}" aria-pressed="${p.wl.avail[i][pt.k]}" aria-label="${d} ${pt.name}">${p.wl.avail[i][pt.k] ? 'Yes' : '–'}</button>`).join('')).join('');
   return `<h1 class="pt-h">When can you come?</h1><p class="muted">Tell us once. The clinic only offers you slots that fit. Changes are saved straight away.</p>
     <section class="pt-card"><div class="avail" role="group" aria-label="Availability">${head}${body}</div>
-    <div class="field"><label for="notice">How much notice do you need?</label><select id="notice" data-change="notice">${NOTICES.map(n => `<option value="${n.v}" ${n.v === p.wl.notice ? 'selected' : ''}>${n.l}</option>`).join('')}</select></div></section>`;
+    <div class="field"><label for="notice">How much notice do you need?</label><select id="notice" data-change="notice">${NOTICES.map(n => `<option value="${n.v}" ${n.v === p.wl.notice ? 'selected' : ''}>${n.l}</option>`).join('')}</select></div>
+    ${docSelect('doc', p.wl.doctor, 'data-change="doctor"')}
+    <p class="note">Confirmed ${OS.availStatus(p).days} days ago. Offers pause after ${OS.AVAIL_DAYS} days without a confirmation, so we only text you about slots you can really take.</p>
+    <button class="btn" data-action="confirm-avail">Confirm that this is still right</button></section>`;
 }
 function messagesView() {
   const msgs = S().outbox.filter(m => m.pid === pid).reverse();
-  return `<h1 class="pt-h">Messages</h1><p class="muted">This is what your phone would show. In the real product these arrive as SMS.</p>` + (msgs.length ? msgs.map(m => `<div class="sms-row"><span class="dim">${esc(m.time)}</span><div class="sms">${esc(m.text)}</div>${m.link ? `<a class="btn small" href="${pathFor(m.link)}" data-nav="${m.link}">Open offer</a>` : ''}</div>`).join('') : '<div class="pt-card"><p class="dim">No messages yet.</p></div>');
+  return `<h1 class="pt-h">Messages</h1><p class="muted">This is what your phone would show. In the real product these arrive as SMS.</p>` + (msgs.length ? msgs.map(m => `<div class="sms-row"><span class="dim">${esc(m.time)}</span><div class="sms">${esc(m.text)}</div>${m.link ? `<a class="btn small" href="${pathFor(m.link)}" data-nav="${m.link}">${m.kind === 'reminder' ? 'Confirm availability' : 'Open offer'}</a>` : ''}${(() => { const oid = m.kind === 'offer' && /^offer\/(\d+)$/.exec(m.link || ''); const f = oid && S().slots.flatMap(x => x.offers).find(x => x.id === +oid[1]); return f && f.state === 'pending' ? `<span class="dim" style="margin-left:8px">No app? Reply by SMS</span> <button class="btn small" data-action="sms-reply" data-o="${f.id}" data-a="accept">Reply 1</button> <button class="btn small" data-action="sms-reply" data-o="${f.id}" data-a="decline">Reply 2</button>` : ''; })()}</div>`).join('') : '<div class="pt-card"><p class="dim">No messages yet.</p></div>');
 }
 function privacyView() {
   const p = me();
@@ -113,7 +120,7 @@ function privacyView() {
 }
 function offerPage(id) {
   const found = (() => { for (const s of S().slots) { const o = s.offers.find(x => x.id === +id); if (o) return { s, o }; } return null; })();
-  if (!found) return '<div class="pt-card"><h3>Offer not found</h3></div>';
+  if (!found || found.o.state === 'review' || found.o.state === 'rejected') return '<div class="pt-card"><h3>Offer not found</h3></div>';
   const owner = OS.patientById(found.o.pid);
   if (owner.id !== pid) return `<div class="pt-card"><h3>This offer is for ${esc(owner.name)}</h3><p class="dim">You are signed in as ${esc(me().name)}.</p><button class="btn primary" data-action="login" data-p="${owner.id}" data-go="offer/${id}">Open as ${esc(owner.name)}</button></div>`;
   return `<h1 class="pt-h">Appointment offer</h1>${offerCard(found.s, found.o)}`;
@@ -141,7 +148,7 @@ function popover(p) {
 }
 function render() {
   const app = $('#app');
-  if (!pid || !me()) { document.title = 'Sign in · Openslot'; app.innerHTML = loginView(); return; }
+  if (!pid || !me()) { document.title = 'Sign in · Openslot'; const was = !!document.querySelector('details.demo-access[open]'); app.innerHTML = loginView(); if (was) app.querySelector('details.demo-access').open = true; return; }
   const r = route(), parts = r.split('/');
   document.title = (TITLES[parts[0]] || 'Home') + ' · Openslot';
   let body;
@@ -174,10 +181,12 @@ document.addEventListener('click', e => {
     if (!res.ok) toast(res.why); else toast(a === 'accept' ? 'You are booked. See you soon.' : 'Thanks, you stay on the list.');
     return;
   }
+  else if (a === 'sms-reply') { const res = OS.respond(d.o, d.a, name + ', SMS reply ' + (d.a === 'accept' ? '1' : '2')); toast(res.ok ? (d.a === 'accept' ? 'Reply 1 sent. You are booked.' : 'Reply 2 sent. You stay on the list.') : res.why); return; }
+  else if (a === 'confirm-avail') { OS.confirmAvail(pid, name); toast('Thanks, your place is kept'); return; }
   else if (a === 'cancel-ask') ui.confirm = true;
   else if (a === 'confirm-no') ui.confirm = null;
   else if (a === 'confirm-yes') { const slotId = me().appt, reason = ($('#reason') || {}).value; ui.confirm = null; OS.cancel(slotId, 'patient', reason, name); toast('Appointment cancelled'); return; }
-  else if (a === 'toggle') { OS.update(st => { const p = OS.patientById(pid); p.wl.avail[+d.d][d.k] = !p.wl.avail[+d.d][d.k]; st.audit.push({ t: fmt(st.clock), actor: name, action: 'Updated own availability' }); }); toast('Saved'); return; }
+  else if (a === 'toggle') { OS.update(st => { const p = OS.patientById(pid); p.wl.avail[+d.d][d.k] = !p.wl.avail[+d.d][d.k]; p.wl.availDays = 0; st.audit.push({ t: fmt(st.clock), actor: name, action: 'Updated own availability' }); }); toast('Saved'); return; }
   else if (a === 'leave') { OS.update(st => { const p = OS.patientById(pid); p.wl.status = 'removed'; st.audit.push({ t: fmt(st.clock), actor: name, action: 'Left the waiting list' }); }); toast('You left the waiting list'); return; }
   else if (a === 'download') { const p = me(), data = { name: p.name, phone: p.phone, consent: p.consent, waitingList: p.wl, offers: myOffers().map(x => ({ slot: x.s.service + ' ' + fmt(x.s.start), state: x.o.state })) }, blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), l = document.createElement('a'); l.href = URL.createObjectURL(blob); l.download = 'my-openslot-data.json'; l.click(); }
   else if (a === 'jt') { ui.joinAvail[+d.d][d.k] = !ui.joinAvail[+d.d][d.k]; }
@@ -194,6 +203,7 @@ document.addEventListener('click', e => {
 document.addEventListener('change', e => {
   const c = e.target.dataset.change; if (!c) return;
   OS.update(st => { const p = OS.patientById(pid), name = p.name + ' (patient app)';
+    if (c === 'doctor') { p.wl.doctor = e.target.value; p.wl.availDays = 0; st.audit.push({ t: fmt(st.clock), actor: name, action: 'Preferred doctor set to ' + (e.target.value || 'any doctor') }); }
     if (c === 'notice') { p.wl.notice = +e.target.value; st.audit.push({ t: fmt(st.clock), actor: name, action: 'Updated own notice needed' }); }
     if (c === 'consent') { p.consent.sms = e.target.checked; st.audit.push({ t: fmt(st.clock), actor: name, action: 'SMS consent ' + (e.target.checked ? 'given' : 'withdrawn') }); if (!e.target.checked && p.wl) p.wl.status = 'removed'; } });
   toast('Saved');
@@ -210,7 +220,7 @@ document.addEventListener('submit', e => {
   }
   if (e.target.id === 'join-form') {
     e.preventDefault(); const svc = [...document.querySelectorAll('input[name=svc]:checked')].map(x => x.value); if (!svc.length) { toast('Pick at least one treatment'); return; }
-    OS.update(st => { const q = OS.patientById(pid); q.wl = { services: svc, wait: 0, notice: +$('#jn').value, avail: ui.joinAvail.map(x => ({ ...x })), flag: false, offers: 0, status: 'waiting' }; q.current = q.current || 'Tue 8 Dec, 10:00'; q.consent = { sms: true, at: 'today' }; st.audit.push({ t: fmt(st.clock), actor: q.name + ' (patient app)', action: 'Joined the waiting list for ' + svc.join(', ') + ' with SMS consent' }); });
+    OS.update(st => { const q = OS.patientById(pid); q.wl = { services: svc, wait: 0, notice: +$('#jn').value, doctor: $('#jd').value, availDays: 0, avail: ui.joinAvail.map(x => ({ ...x })), flag: false, offers: 0, status: 'waiting' }; q.current = q.current || 'Tue 8 Dec, 10:00'; q.consent = { sms: true, at: 'today' }; st.audit.push({ t: fmt(st.clock), actor: q.name + ' (patient app)', action: 'Joined the waiting list for ' + svc.join(', ') + ' with SMS consent' }); });
     toast('You are on the list');
   }
 });

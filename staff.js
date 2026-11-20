@@ -29,7 +29,9 @@ const statusChip = s => ({
   done: '<span class="chip neutral">Done</span>', booked: '<span class="chip neutral">Booked</span>',
   cancelled: '<span class="chip warn">Finding replacement</span>', refilled: '<span class="chip ok">Refilled</span>', unfilled: '<span class="chip bad">Unfilled</span>',
 }[s.status]);
-const offerChip = st => ({ pending: '<span class="chip info">Waiting for reply</span>', accepted: '<span class="chip ok">Accepted</span>', declined: '<span class="chip bad">Declined</span>', expired: '<span class="chip neutral">Expired</span>' }[st]);
+const offerChip = st => ({ pending: '<span class="chip info">Waiting for reply</span>', accepted: '<span class="chip ok">Accepted</span>', declined: '<span class="chip bad">Declined</span>', expired: '<span class="chip neutral">Expired</span>', review: '<span class="chip warn">Needs dentist confirmation</span>', rejected: '<span class="chip neutral">Not confirmed</span>' }[st]);
+const deliveryChip = m => { const d = OS.delivery(m); return `<span class="chip ${d === 'failed' ? 'bad' : d === 'delivered' ? 'ok' : 'neutral'}">${d === 'failed' ? 'Delivery failed' : d === 'delivered' ? 'Delivered' : 'Sent'}</span>`; };
+const availChip = p => { const a = OS.availStatus(p); return a.state === 'expired' ? `<span class="chip bad">Expired, ${a.days} days old</span>` : a.state === 'soon' ? `<span class="chip warn">Expires in ${a.left} days</span>` : `<span class="chip ok">Updated ${a.days} days ago</span>`; };
 
 /* ---------- login ---------- */
 function loginView() {
@@ -138,7 +140,7 @@ function schedule() {
     ${slots.filter(x => x.doc === d).map(x => {
       const p = OS.patientById(x.patientId), po = OS.pendingOffer(x), sel = ui.selected === x.id;
       const who = x.status === 'refilled' ? OS.patientById(x.filledBy).name : p.name;
-      const sub = esc(x.service) + (x.status === 'cancelled' ? (po ? ', offer sent to ' + OS.patientById(po.pid).name.split(' ')[0] : x.queued ? ', offer waits for opening' : ', needs attention') : x.status === 'refilled' ? ', refilled' : x.status === 'unfilled' ? ', unfilled' : x.status === 'done' ? ', done' : '');
+      const sub = esc(x.service) + (x.status === 'cancelled' ? (po ? (po.state === 'review' ? ', waits for a dentist' : ', offer sent to ' + OS.patientById(po.pid).name.split(' ')[0]) : x.queued ? ', offer waits for opening' : ', needs attention') : x.status === 'refilled' ? ', refilled' : x.status === 'unfilled' ? ', unfilled' : x.status === 'done' ? ', done' : '');
       return `<button class="blk ${x.status} ${po ? 'pending' : ''} ${sel ? 'sel' : ''}" style="top:${(x.start - T0) * PX}px;height:${x.dur * PX - 3}px" data-action="select" data-slot="${x.id}" aria-label="${fmt(x.start)} ${esc(x.service)} ${esc(who)}">
         <span class="blk-t">${fmt(x.start)}</span><span class="blk-main"><span class="blk-n">${esc(who)}</span><span class="blk-s">${sub}</span></span></button>`;
     }).join('')}
@@ -147,7 +149,7 @@ function schedule() {
   return `<div class="sched" style="grid-template-columns:52px repeat(${Math.max(1, docs.length)},minmax(0,1fr))"><div class="sched-axis"><div class="sched-head">&nbsp;</div><div class="sched-body" style="height:${H}px">${hoursList.map(h => `<span style="top:${(h * 60 - T0) * PX - 7}px">${String(h).padStart(2, '0')}:00</span>`).join('')}${now ? `<span class="nowpill" style="top:${(S().clock - T0) * PX - 8}px">${fmt(S().clock)}</span>` : ''}</div></div>${cols || '<div class="empty">No practitioner works today. Add one in Settings, Team.</div>'}</div>`;
 }
 function viewToday() {
-  const st = OS.stats(), pend = S().slots.filter(s => OS.pendingOffer(s)).length;
+  const st = OS.stats(), pend = S().slots.filter(s => { const o = OS.pendingOffer(s); return o && o.state === 'pending'; }).length, tasks = S().tasks.filter(t => !t.done);
   const tile = (l, v, cls) => `<div class="card tile ${cls || ''}"><span>${l}</span><strong>${v}</strong></div>`;
   const att = S().slots.filter(s => s.status === 'cancelled' && !OS.pendingOffer(s)).length;
   return `<div class="page-head"><div><h1>Today, Tuesday 17 November</h1>
@@ -155,6 +157,7 @@ function viewToday() {
     <div class="tiles">${tile('Open cancellations', st.open, st.open ? 'hot' : '')}${tile('Offers waiting for a reply', pend)}${tile('Refilled today', S().slots.filter(s => s.status === 'refilled').length)}${tile('Unfilled today', S().slots.filter(s => s.status === 'unfilled').length)}</div>
     ${!OS.isOpen(S().clock) ? `<div class="banner warn">${S().hours[TODAY_IDX].open ? 'The clinic is closed right now (' + S().hours[TODAY_IDX].from + ' to ' + S().hours[TODAY_IDX].to + ').' : 'The clinic is closed today.'}${S().settings.quiet ? ' Offers are sent when it opens.' : ''}</div>` : ''}
     ${att && !S().settings.autoOffer ? `<div class="banner warn">${att} cancelled slot${att > 1 ? 's' : ''} need a staff decision. Automatic offers are switched off in Settings.</div>` : ''}
+    ${tasks.length ? `<section class="card todo" aria-label="Follow-up calls"><div class="card-head"><h2>Follow-up calls</h2><span class="dim">${tasks.length} open</span></div><ul class="offers">${tasks.map(t => { const p = OS.patientById(t.pid); return `<li><div><strong>${esc(t.text)}</strong><span class="dim"> ${esc(p.phone)}</span></div><div><button class="btn small" data-action="task-done" data-t="${t.id}">Mark as called</button></div></li>`; }).join('')}</ul></section>` : ''}
     <div class="split"><section class="card sched-card" aria-label="Schedule"><div class="card-head"><h2>Schedule</h2><span class="dim">${S().hours[TODAY_IDX].open ? 'Open ' + S().hours[TODAY_IDX].from + ' to ' + S().hours[TODAY_IDX].to : 'Closed today'}</span></div><div class="legend"><span><i style="background:var(--booked)"></i>Booked</span><span><i style="background:var(--warn)"></i>Finding replacement</span><span><i style="background:var(--ok)"></i>Refilled</span><span><i style="background:var(--bad)"></i>Unfilled</span></div>${schedule()}</section>
     <aside class="panel" aria-label="Appointment details">${panel()}</aside></div>`;
 }
@@ -162,15 +165,15 @@ function offersTimeline(s) {
   if (!s.offers.length) return '';
   return `<div class="section-title">Offers for this slot</div><ul class="offers">${s.offers.map(o => {
     const p = OS.patientById(o.pid), left = o.expiresAt - S().clock;
-    return `<li><div><strong>${esc(p.name)}</strong><span class="dim"> sent ${fmt(o.sentAt)}</span></div><div>${offerChip(o.state)}${o.state === 'pending' ? `<span class="dim"> expires ${fmt(o.expiresAt)}${left > 0 ? ', ' + left + ' min left' : ''}</span>` : ''}</div></li>`;
+    return `<li><div><strong>${esc(p.name)}</strong><span class="dim">${o.state === 'review' ? ' prepared ' : ' sent '}${fmt(o.sentAt)}</span></div><div>${offerChip(o.state)}${o.state === 'review' ? '<span class="dim"> not sent yet</span>' : ''}${o.state === 'pending' ? `<span class="dim"> expires ${fmt(o.expiresAt)}${left > 0 ? ', ' + left + ' min left' : ''}</span>` : ''}</div></li>`;
   }).join('')}</ul>`;
 }
 function stepper(s) {
-  const po = OS.pendingOffer(s), sent = s.offers.length > 0;
+  const po = OS.pendingOffer(s), sent = s.offers.some(o => ['pending', 'accepted', 'declined', 'expired'].includes(o.state));
   const st = [
     ['Cancelled', 'done'],
     ['Offer sent', sent ? 'done' : 'current'],
-    ['Reply', s.status === 'refilled' ? 'done' : po ? 'current' : (s.status === 'unfilled' ? 'bad' : '')],
+    ['Reply', s.status === 'refilled' ? 'done' : po && po.state === 'pending' ? 'current' : (s.status === 'unfilled' ? 'bad' : '')],
     [s.status === 'unfilled' ? 'Unfilled' : 'Refilled', s.status === 'refilled' ? 'done' : s.status === 'unfilled' ? 'bad' : ''],
   ];
   return `<div class="stepper" aria-label="Progress">${st.map(([l, c], i) => `<div class="step ${c}"><i>${c === 'done' ? '✓' : c === 'bad' ? '!' : i + 1}</i>${l}</div>`).join('')}</div>`;
@@ -200,12 +203,14 @@ function panel() {
   const msg = po && S().outbox.slice().reverse().find(m => m.link === 'offer/' + po.id);
   const cand = (x, i) => `<div class="cand"><div class="rank">${i + 1}</div><div><div class="cand-name">${esc(x.p.name)}${x.p.wl.flag ? '<span class="chip warn">Clinical flag</span>' : ''}</div>
     <div class="cand-meta">Waiting ${x.p.wl.wait} days · ${x.p.wl.offers} recent offer${x.p.wl.offers === 1 ? '' : 's'}</div>
-    <div class="checks"><span class="chip ok">Wants ${esc(s.service)}</span><span class="chip ok">Free ${DAYS[TODAY_IDX]} ${partName(partOf(s.start)).toLowerCase()}</span><span class="chip ok">Needs ${noticeLabel(x.p.wl.notice)}</span></div>
+    <div class="checks"><span class="chip ok">Wants ${esc(s.service)}</span><span class="chip ok">Free ${DAYS[TODAY_IDX]} ${partName(partOf(s.start)).toLowerCase()}</span><span class="chip ok">Needs ${noticeLabel(x.p.wl.notice)}</span><span class="chip ok">${x.p.wl.doctor ? 'Prefers ' + esc(x.p.wl.doctor) : 'Any doctor'}</span></div>
     ${can(role(), 'offer') && !po ? `<button class="btn small" style="margin-top:8px" data-action="offer" data-slot="${s.id}" data-p="${x.p.id}">Offer now</button>` : ''}</div></div>`;
-  const out = x => `<div class="cand out"><div class="rank">–</div><div><div class="cand-name">${esc(x.p.name)}</div><div class="checks">${x.checks.avail ? '' : `<span class="chip bad">Not free ${DAYS[TODAY_IDX]} ${partName(partOf(s.start)).toLowerCase()}</span>`}${x.checks.notice ? '' : `<span class="chip bad">Needs ${noticeLabel(x.p.wl.notice)}, only ${Math.max(0, c.notice)} min left</span>`}</div></div></div>`;
+  const out = x => `<div class="cand out"><div class="rank">–</div><div><div class="cand-name">${esc(x.p.name)}</div><div class="checks">${x.checks.avail ? '' : `<span class="chip bad">Not free ${DAYS[TODAY_IDX]} ${partName(partOf(s.start)).toLowerCase()}</span>`}${x.checks.notice ? '' : `<span class="chip bad">Needs ${noticeLabel(x.p.wl.notice)}, only ${Math.max(0, c.notice)} min left</span>`}${x.checks.doctor ? '' : `<span class="chip bad">Prefers ${esc(x.p.wl.doctor)}</span>`}${x.checks.fresh ? '' : `<span class="chip bad">Availability expired</span>`}</div></div></div>`;
   return `<div class="card">${head}
-    <div class="banner ${po ? 'info' : 'warn'}">${po ? `Offer sent to ${esc(OS.patientById(po.pid).name)}. Waiting for the reply, expires ${fmt(po.expiresAt)}.` : s.queued ? `The clinic is closed. Openslot will send the offer when it opens${OS.nextOpenAt() != null ? ' at ' + fmt(OS.nextOpenAt()) : ''}.` : manual ? 'Automation is off. Choose who to offer this slot to.' : 'Openslot is choosing the next patient.'}</div>
-    ${msg ? `<div class="sms-peek"><span class="dim">SMS sent to ${esc(OS.patientById(po.pid).phone)} at ${esc(msg.time)}</span><div class="sms">${esc(msg.text)}</div></div>` : ''}
+    <div class="banner ${po ? (po.state === 'review' ? 'warn' : 'info') : 'warn'}">${po && po.state === 'review' ? `${esc(OS.patientById(po.pid).name)} has a clinical flag. A dentist confirms this offer before the patient is texted.` : po ? `Offer sent to ${esc(OS.patientById(po.pid).name)}. Waiting for the reply, expires ${fmt(po.expiresAt)}.` : s.queued ? `The clinic is closed. Openslot will send the offer when it opens${OS.nextOpenAt() != null ? ' at ' + fmt(OS.nextOpenAt()) : ''}.` : manual ? 'Automation is off. Choose who to offer this slot to.' : 'Openslot is choosing the next patient.'}</div>
+    ${po && po.state === 'review' ? (can(role(), 'confirm') ? `<div class="panel-actions" style="padding-top:0"><button class="btn primary" data-action="confirm-offer" data-o="${po.id}">Confirm offer</button><button class="btn" data-action="skip-offer" data-o="${po.id}">Choose the next patient</button></div>` : '<p class="note" style="padding:0 18px">Only a dentist can confirm offers for flagged patients. Ask Dr. Weiss or Dr. Okafor.</p>') : ''}
+    ${msg ? `<div class="sms-peek"><span class="dim">SMS to ${esc(OS.patientById(po.pid).phone)} at ${esc(msg.time)} </span>${deliveryChip(msg)}<div class="sms">${esc(msg.text)}</div></div>` : ''}
+    ${msg && OS.delivery(msg) === 'failed' ? `<div class="banner bad">The SMS could not be delivered. Phone ${esc(OS.patientById(po.pid).name)} on ${esc(OS.patientById(po.pid).phone)} and enter the answer here.</div><div class="panel-actions" style="padding-top:0"><button class="btn primary" data-action="phone-answer" data-o="${po.id}" data-a="accept">Patient accepts by phone</button><button class="btn" data-action="phone-answer" data-o="${po.id}" data-a="decline">Patient declines by phone</button></div>` : ''}
     ${offersTimeline(s)}
     <div class="section-title">Next in line, ranked by the clinic rules (${c.eligible.length})</div>
     ${c.eligible.length ? c.eligible.map(cand).join('') : '<div class="card-body dim">Nobody else is eligible.</div>'}
@@ -220,8 +225,8 @@ function waitRows() {
     .filter(p => ui.filter === 'All' || p.wl.services.includes(ui.filter)).filter(p => !q || p.name.toLowerCase().includes(q))
     .sort((a, b) => (a.wl.status === 'waiting' ? 0 : 1) - (b.wl.status === 'waiting' ? 0 : 1) || b.wl.wait - a.wl.wait)
     .map(p => `<tr class="clickable" data-action="open-patient" data-p="${p.id}" tabindex="0"><td><strong>${esc(p.name)}</strong></td><td>${p.wl.services.map(esc).join(', ')}</td><td class="num">${p.wl.wait} days</td>
-      <td class="hide-sm"><span class="mini">${p.wl.avail.map(d => `<i class="${d.M || d.A || d.E ? 'on' : ''}"></i>`).join('')}</span></td><td class="hide-sm">${noticeLabel(p.wl.notice)}</td>
-      <td class="hide-sm">${p.wl.flag ? '<span class="chip warn">Clinical flag</span>' : '<span class="dim">None</span>'}</td><td>${p.wl.status === 'waiting' ? '<span class="chip info">Waiting</span>' : '<span class="chip ok">Moved earlier</span>'}</td></tr>`).join('') || '<tr><td colspan="7" class="dim">No patients match.</td></tr>';
+      <td class="hide-sm"><span class="mini">${p.wl.avail.map(d => `<i class="${d.M || d.A || d.E ? 'on' : ''}"></i>`).join('')}</span></td><td class="hide-sm">${noticeLabel(p.wl.notice)}</td><td class="hide-sm">${p.wl.doctor ? esc(p.wl.doctor) : '<span class="dim">Any</span>'}</td><td class="hide-sm">${availChip(p)}</td>
+      <td class="hide-sm">${p.wl.flag ? '<span class="chip warn">Clinical flag</span>' : '<span class="dim">None</span>'}</td><td>${p.wl.status === 'waiting' ? '<span class="chip info">Waiting</span>' : '<span class="chip ok">Moved earlier</span>'}</td></tr>`).join('') || '<tr><td colspan="9" class="dim">No patients match.</td></tr>';
 }
 function viewWaiting() {
   const filters = ['All', ...OS.services()].map(f => `<button type="button" data-action="filter" data-s="${esc(f)}" aria-pressed="${ui.filter === f}">${esc(f)}</button>`).join('');
@@ -229,7 +234,7 @@ function viewWaiting() {
     ${can(role(), 'waitlist-edit') ? '<button class="btn primary" data-action="add-open">Add patient</button>' : ''}</div>
     <section class="card"><div class="toolbar"><div class="seg" role="group" aria-label="Filter by service">${filters}</div>
     <input type="search" id="search" placeholder="Search by name" aria-label="Search by name" value="${esc(ui.search)}"></div>
-    <div class="table-wrap"><table><thead><tr><th>Patient</th><th>Wants</th><th class="num">Waiting</th><th class="hide-sm">Days free</th><th class="hide-sm">Notice needed</th><th class="hide-sm">Clinical flag</th><th>Status</th></tr></thead><tbody id="wl-body">${waitRows()}</tbody></table></div></section>`;
+    <div class="table-wrap"><table><thead><tr><th>Patient</th><th>Wants</th><th class="num">Waiting</th><th class="hide-sm">Days free</th><th class="hide-sm">Notice needed</th><th class="hide-sm">Doctor</th><th class="hide-sm">Availability</th><th class="hide-sm">Clinical flag</th><th>Status</th></tr></thead><tbody id="wl-body">${waitRows()}</tbody></table></div></section>`;
 }
 function availGrid(p, editable, attr) {
   const head = ['<div></div>', ...DAYS.map(d => `<div class="h">${d}</div>`)].join('');
@@ -246,6 +251,9 @@ function drawer() {
       <div class="kv"><span>Current appointment</span><strong>${esc(p.current)}</strong></div>
       <div class="section-title" style="padding-left:0">Availability profile</div>${availGrid(p, edit, 'toggle-avail')}
       <div class="field"><label for="notice">Notice the patient needs</label><select id="notice" data-change="notice" ${edit ? '' : 'disabled'}>${NOTICES.map(n => `<option value="${n.v}" ${n.v === p.wl.notice ? 'selected' : ''}>${n.l}</option>`).join('')}</select></div>
+      <div class="field"><label for="doc">Preferred doctor</label><select id="doc" data-change="doctor" ${edit ? '' : 'disabled'}><option value="">Any doctor</option>${S().practitioners.map(q => `<option value="${esc(q.name)}" ${q.name === p.wl.doctor ? 'selected' : ''}>${esc(q.name)}</option>`).join('')}</select></div>
+      <div class="kv" style="margin-top:14px"><span>Availability confirmed</span><strong>${availChip(p)}</strong><span class="dim">Offers stop when availability is older than ${OS.AVAIL_DAYS} days. The patient can confirm it in the app.</span></div>
+      ${edit && OS.availStatus(p).state !== 'ok' ? '<button class="btn small" style="margin-top:8px" data-action="remind" data-p="' + p.id + '">Send a reminder by SMS</button>' : ''}
       <div class="field"><label>Clinical flag</label>
         <label class="switch-row"><span class="switch"><input type="checkbox" data-change="flag" ${p.wl.flag ? 'checked' : ''} ${can(role(), 'flag') ? '' : 'disabled'}><span></span></span><span>${p.wl.flag ? 'Flagged as clinically urgent' : 'No clinical flag'}</span></label>
         ${can(role(), 'flag') ? '' : '<p class="note" style="margin-top:6px">Only a dentist can set or remove the clinical flag.</p>'}</div>
@@ -258,6 +266,7 @@ function addModal() {
     <h2>Add patient to the waiting list</h2>
     <form id="add-form"><label for="add-name">Full name</label><input id="add-name" required placeholder="For example Clara Neumann">
       <fieldset><legend>Treatment wanted</legend>${OS.services().map((sv, i) => `<label class="check"><input type="checkbox" name="svc" value="${esc(sv)}" ${i === 0 ? 'checked' : ''}> ${esc(sv)}</label>`).join('')}</fieldset>
+      <label for="add-doc">Preferred doctor</label><select id="add-doc"><option value="">Any doctor</option>${S().practitioners.map(q => `<option value="${esc(q.name)}">${esc(q.name)}</option>`).join('')}</select>
       <label for="add-notice">Notice needed</label><select id="add-notice">${NOTICES.map(n => `<option value="${n.v}" ${n.v === 60 ? 'selected' : ''}>${n.l}</option>`).join('')}</select>
       <label class="check consent"><input type="checkbox" id="add-consent" required> The patient agreed to receive appointment offers by SMS (consent is stored with date).</label>
       <div class="modal-foot"><button type="button" class="btn" data-action="add-close">Cancel</button><button class="btn primary" type="submit">Add patient</button></div></form></div>`;
@@ -265,9 +274,9 @@ function addModal() {
 
 /* ---------- messages, rules, recovery, settings, audit ---------- */
 function viewMessages() {
-  const rows = S().outbox.slice().reverse().map(m => { const p = OS.patientById(m.pid); return `<tr><td class="dim nowrap">Tue ${esc(m.time)}</td><td class="nowrap"><strong>${esc(p.name)}</strong><br><span class="dim">${esc(p.phone)}</span></td><td class="hide-sm"><span class="chip ${m.kind === 'offer' ? 'info' : 'neutral'}">${m.kind === 'offer' ? 'Offer' : 'Confirmation'}</span></td><td>${esc(m.text)}</td></tr>`; }).join('');
-  return `<div class="page-head"><div><h1>Messages</h1><p>Every SMS Openslot sends to your patients, and what they answered.</p></div></div>
-  <section class="card"><div class="table-wrap"><table><thead><tr><th>Sent</th><th>To</th><th class="hide-sm">Type</th><th>Message</th></tr></thead><tbody>${rows || '<tr><td colspan="4" class="empty">No messages yet. Cancel an appointment on the Today page.</td></tr>'}</tbody></table></div></section>`;
+  const rows = S().outbox.slice().reverse().map(m => { const p = OS.patientById(m.pid); return `<tr><td class="dim nowrap">Tue ${esc(m.time)}</td><td class="nowrap"><strong>${esc(p.name)}</strong><br><span class="dim">${esc(p.phone)}</span></td><td class="hide-sm"><span class="chip ${m.kind === 'offer' ? 'info' : 'neutral'}">${m.kind === 'offer' ? 'Offer' : m.kind === 'reminder' ? 'Reminder' : 'Confirmation'}</span></td><td>${esc(m.text)}</td><td>${deliveryChip(m)}</td></tr>`; }).join('');
+  return `<div class="page-head"><div><h1>Messages</h1><p>Every SMS Openslot sends to your patients, and whether it arrived. The text is generic on purpose, details are only shown after the patient opens the secure link.</p></div></div>
+  <section class="card"><div class="table-wrap"><table><thead><tr><th>Sent</th><th>To</th><th class="hide-sm">Type</th><th>Message</th><th>Delivery</th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="empty">No messages yet. Cancel an appointment on the Today page.</td></tr>'}</tbody></table></div></section>`;
 }
 function viewRules() {
   const edit = can(role(), 'rules');
@@ -281,7 +290,9 @@ function viewRules() {
   <section class="card"><div class="card-head"><h2>Always required</h2></div><ul class="fixed-list">
     <li><span class="tick">✓</span><div><strong>Same service</strong><br><span class="dim">The patient is waiting for this treatment.</span></div></li>
     <li><span class="tick">✓</span><div><strong>Really available</strong><br><span class="dim">The patient marked this day and part of the day as possible.</span></div></li>
-    <li><span class="tick">✓</span><div><strong>Enough notice</strong><br><span class="dim">The time left is at least the notice the patient asked for.</span></div></li></ul></section></div>`;
+    <li><span class="tick">✓</span><div><strong>Enough notice</strong><br><span class="dim">The time left is at least the notice the patient asked for.</span></div></li>
+    <li><span class="tick">✓</span><div><strong>Preferred doctor</strong><br><span class="dim">If the patient named a doctor, the slot must be with that doctor.</span></div></li>
+    <li><span class="tick">✓</span><div><strong>Current availability</strong><br><span class="dim">The patient confirmed their availability in the last ${OS.AVAIL_DAYS} days.</span></div></li></ul></section></div>`;
 }
 function viewRecovery() {
   const st = OS.stats(), kpi = (l, v, s) => `<div class="card kpi"><span>${l}</span><strong>${v}</strong><small>${s}</small></div>`;
@@ -338,11 +349,12 @@ function viewSettings() {
     const ex = OS.slotById(4);
     body = `<div class="two-col"><section class="card"><div class="card-head"><h2>Offers</h2></div><div class="card-body form">
     <label class="switch-row"><span class="switch"><input type="checkbox" data-change="auto" ${s.autoOffer ? 'checked' : ''}><span></span></span><span><strong>Send offers automatically</strong><br><span class="dim">Openslot contacts the next patient by itself. Staff can step in at any time. Switch off to confirm every offer by hand.</span></span></label>
+    <label class="switch-row" style="margin-top:16px"><span class="switch"><input type="checkbox" data-change="confirm" ${s.confirmPriority ? 'checked' : ''}><span></span></span><span><strong>A dentist confirms offers for flagged patients</strong><br><span class="dim">For patients with a clinical flag, the offer waits until a dentist confirms it. Then the patient is texted.</span></span></label>
     <div class="field"><label for="expiry">Offer is valid for</label><select id="expiry" data-change="expiry">${[10, 15, 20, 30].map(v => `<option value="${v}" ${v === s.expiry ? 'selected' : ''}>${v} minutes</option>`).join('')}</select></div>
     <div class="field"><label for="cutoff">Stop offering a slot when it starts in less than</label><select id="cutoff" data-change="cutoff">${[10, 20, 30, 60].map(v => `<option value="${v}" ${v === s.cutoff ? 'selected' : ''}>${v} minutes</option>`).join('')}</select></div></div></section>
   <section class="card"><div class="card-head"><h2>SMS text</h2></div><div class="card-body form">
     <label for="tpl" style="font-weight:600;font-size:13px">Message template</label><textarea id="tpl" rows="5" data-change="tpl">${esc(s.template)}</textarea>
-    <p class="note">Variables: {clinic} {service} {time} {doctor} {link} {minutes}. Keep {link} so patients can answer.</p>
+    <p class="note">Variables: {clinic} {service} {time} {doctor} {link} {minutes}. Keep {link} so patients can answer. Keep the text generic: personal or medical details do not belong in an SMS.</p>
     <div class="section-title" style="padding-left:0">Preview</div><div class="sms">${esc(s.template.replace('{clinic}', OS.clinic()).replace('{service}', ex.service).replace('{time}', fmt(ex.start)).replace('{doctor}', ex.doc).replace('{link}', 'openslot.app/o/123').replace('{minutes}', s.expiry))}</div></div></section></div>
   <section class="card" style="margin-top:20px"><div class="card-head"><h2>Data protection</h2></div><div class="card-body"><ul class="plain">
     <li>Offers are only sent to patients who gave SMS consent. The date of consent is stored.</li>
@@ -408,7 +420,7 @@ function afterLogin() { const seg = OS.route()[0]; go(KEYOF[seg] ? KEYOF[seg] : 
 let prevOpen = {}, prevSig = null;
 function render() {
   const app = $('#app');
-  if (!session) { document.title = 'Sign in · Openslot'; app.innerHTML = loginView(); return; }
+  if (!session) { document.title = 'Sign in · Openslot'; const was = !!document.querySelector('details.demo-access[open]'); app.innerHTML = loginView(); if (was) app.querySelector('details.demo-access').open = true; return; }
   let r = ROUTES[route()] ? route() : 'today';
   if (r === 'settings' && !can(role(), 'settings')) r = 'today';
   if (r === 'audit' && !can(role(), 'audit')) r = 'today';
@@ -440,6 +452,11 @@ document.addEventListener('click', e => {
   else if (a === 'cancel') { const reason = ($('#reason') || {}).value; OS.cancel(d.slot, 'reception', reason, who); return; }
   else if (a === 'offer') { OS.offer(d.slot, d.p, who); return; }
   else if (a === 'unfilled') { OS.update(st => { const s = OS.slotById(d.slot); if (s.status === 'cancelled') { s.status = 'unfilled'; st.audit.push({ t: fmt(st.clock), actor: who, action: `Closed ${s.service} at ${fmt(s.start)} as unfilled` }); } }); return; }
+  else if (a === 'confirm-offer') { OS.confirmOffer(d.o, true, who); return; }
+  else if (a === 'skip-offer') { OS.confirmOffer(d.o, false, who); return; }
+  else if (a === 'phone-answer') { const res = OS.respond(d.o, d.a, who + ', answer by phone'); if (!res.ok) toast(res.why); return; }
+  else if (a === 'remind') { OS.remind(d.p, who); toast('Reminder sent'); return; }
+  else if (a === 'task-done') { OS.doneTask(d.t, who); toast('Marked as called'); return; }
   else if (a === 'filter') ui.filter = d.s;
   else if (a === 'open-patient') ui.drawer = +d.p;
   else if (a === 'close-drawer') ui.drawer = null;
@@ -493,7 +510,7 @@ document.addEventListener('submit', e => {
     const name = $('#add-name').value.trim(), svc = [...document.querySelectorAll('input[name=svc]:checked')].map(x => x.value);
     if (!name || !svc.length) return;
     OS.update(st => { const id = st.nextId++; st.patients.push({ id, name, phone: '+43 660 ••• ' + String(100 + id).slice(-3), consent: { sms: true, at: 'today' }, appt: null, current: 'Tue 8 Dec, 10:00',
-      wl: { services: svc, wait: 0, notice: +$('#add-notice').value, avail: Array.from({ length: 5 }, () => ({ M: true, A: false, E: false })), flag: false, offers: 0, status: 'waiting' } });
+      wl: { services: svc, wait: 0, notice: +$('#add-notice').value, doctor: $('#add-doc').value, availDays: 0, avail: Array.from({ length: 5 }, () => ({ M: true, A: false, E: false })), flag: false, offers: 0, status: 'waiting' } });
       st.audit.push({ t: fmt(st.clock), actor: session.name + ' (' + ROLE_LABEL[role()] + ')', action: `Added ${name} to the waiting list with SMS consent` }); });
     ui.addOpen = false; toast(name + ' added to the waiting list');
   }
@@ -515,6 +532,8 @@ document.addEventListener('change', e => {
     if (c === 'rule') { st.rules[+e.target.dataset.i].on = e.target.checked; st.approval = { by: session.name, at: 'just now' }; log('Switched an allocation rule ' + (e.target.checked ? 'on' : 'off')); }
     if (c === 'notice') { const p = OS.patientById(ui.drawer); p.wl.notice = +e.target.value; log('Changed notice needed for ' + p.name); }
     if (c === 'flag') { const p = OS.patientById(ui.drawer); p.wl.flag = e.target.checked; log((e.target.checked ? 'Set' : 'Removed') + ' the clinical flag for ' + p.name); }
+    if (c === 'doctor') { const p = OS.patientById(ui.drawer); p.wl.doctor = e.target.value; log('Preferred doctor of ' + p.name + ' set to ' + (e.target.value || 'any doctor')); }
+    if (c === 'confirm') { st.settings.confirmPriority = e.target.checked; log('Dentist confirmation for flagged patients switched ' + (e.target.checked ? 'on' : 'off')); }
     if (c === 'auto') { st.settings.autoOffer = e.target.checked; log('Automatic offers switched ' + (e.target.checked ? 'on' : 'off')); }
     if (c === 'expiry') { st.settings.expiry = +e.target.value; log('Offer validity set to ' + e.target.value + ' minutes'); }
     if (c === 'cutoff') { st.settings.cutoff = +e.target.value; log('Offer cut-off set to ' + e.target.value + ' minutes'); }

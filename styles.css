@@ -502,3 +502,7 @@ details.demo-access summary::-webkit-details-marker{display:none}
 .closed-band{position:absolute;left:0;right:0;background:repeating-linear-gradient(135deg,var(--surface-3) 0 5px,transparent 5px 10px);opacity:.75;pointer-events:none;z-index:0}
 .blk,.nowline{z-index:1}
 @media (max-width:820px){.hrow{padding:12px 14px}.prac{padding:14px}}
+
+/* v8: follow-up calls card */
+.todo { margin-bottom: 20px; }
+.todo .offers li { align-items: center; }

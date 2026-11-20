@@ -16,6 +16,9 @@ const DURATION = { 'Check-up': 30, 'Hygiene': 45, 'Filling': 60, 'Root canal con
 const NOTICES = [{ v: 30, l: '30 minutes' }, { v: 60, l: '1 hour' }, { v: 120, l: '2 hours' }, { v: 240, l: '4 hours' }, { v: 1440, l: '1 day' }];
 const CLINIC = 'Linden Dental Practice';
 const STAFF_MIN_PER_REFILL = 12;
+const AVAIL_DAYS = 30; // availability expires after this many days without a confirmation
+const OLD_TPL = '{clinic}: a {service} slot is free today at {time} with {doctor}. Open {link} to take it or decline. Offer valid for {minutes} minutes.';
+const NEW_TPL = '{clinic}: you have an earlier appointment offer. Open {link} to see it. No app? Reply 1 to accept or 2 to decline. Valid for {minutes} minutes.';
 
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmt = m => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
@@ -36,6 +39,10 @@ function norm(st) {
   if (!st.practitioners) st.practitioners = defaultPractitioners();
   if (!st.services) st.services = defaultServices();
   if (st.settings && st.settings.quiet === undefined) st.settings.quiet = true;
+  if (st.settings && st.settings.confirmPriority === undefined) st.settings.confirmPriority = true;
+  if (st.settings && st.settings.template === OLD_TPL) st.settings.template = NEW_TPL;
+  if (!st.tasks) st.tasks = [];
+  (st.patients || []).forEach(p => { if (p.wl) { if (p.wl.doctor === undefined) p.wl.doctor = ''; if (p.wl.availDays === undefined) p.wl.availDays = 0; } });
   return st;
 }
 const clinicName = () => S.clinic.name;
@@ -66,6 +73,9 @@ function seed() {
     B(21, 'Greta Moser', 3), B(22, 'Oskar Lindner', 4), B(23, 'Hanna Roth', 5), B(24, 'Karl Steiner', 6), B(25, 'Lena Fuchs', 7), B(26, 'Peter Huber', 8),
     B(27, 'Rita Gasser', 1), B(28, 'Emil Strasser', 2),
   ];
+  const prefs = { 4: 'Dr. Okafor', 5: 'Dr. Weiss', 7: 'Dr. Weiss', 9: 'Dr. Weiss', 13: 'Dr. Okafor' };
+  const ages = { 1: 4, 2: 9, 3: 12, 4: 21, 5: 18, 6: 7, 7: 14, 8: 26, 9: 33, 10: 3, 11: 19, 12: 28, 13: 11, 14: 2 };
+  patients.forEach(p => { if (p.wl) { p.wl.doctor = prefs[p.id] || ''; p.wl.availDays = ages[p.id]; } if (p.id === 3) p.reach = 'off'; });
   const S = (id, start, service, doc, pid, status) => ({
     id, start, dur: DURATION[service], service, doc, patientId: pid, status: status || 'booked',
     cancelledAt: null, cancelledBy: null, reason: null, offers: [], filledBy: null, filledAt: null,
@@ -84,7 +94,8 @@ function seed() {
     approval: { by: 'Dr. Weiss', at: '4 Nov 2026' },
     clinic: { name: 'Linden Dental Practice', city: 'Vienna', phone: '+43 1 555 0100' },
     hours: defaultHours(), practitioners: defaultPractitioners(), services: defaultServices(),
-    settings: { autoOffer: true, quiet: true, expiry: 15, cutoff: 20, template: '{clinic}: a {service} slot is free today at {time} with {doctor}. Open {link} to take it or decline. Offer valid for {minutes} minutes.' },
+    settings: { autoOffer: true, quiet: true, confirmPriority: true, expiry: 15, cutoff: 20, template: NEW_TPL },
+    tasks: [],
     outbox: [], audit: [{ t: '09:10', actor: 'System', action: 'Demo day started' }],
     base: { cancelled: 6, refilled: 2, unfilled: 2, minutes: 148 },
     history: [{ w: 'Wk 43', c: 19, r: 8 }, { w: 'Wk 44', c: 22, r: 12 }, { w: 'Wk 45', c: 17, r: 9 }, { w: 'Wk 46', c: 21, r: 11 }],
@@ -198,8 +209,8 @@ const log = (actor, action) => S.audit.push({ t: fmt(S.clock), actor, action });
 /* ---------- permissions ---------- */
 const PERMS = {
   reception: ['cancel', 'offer', 'waitlist-edit', 'messages'],
-  dentist: ['cancel', 'offer', 'waitlist-edit', 'messages', 'flag', 'rules', 'audit'],
-  owner: ['cancel', 'offer', 'waitlist-edit', 'messages', 'settings', 'audit'],
+  dentist: ['cancel', 'offer', 'waitlist-edit', 'messages', 'flag', 'confirm', 'rules', 'audit'],
+  owner: ['cancel', 'offer', 'waitlist-edit', 'messages', 'confirm', 'settings', 'audit'],
 };
 const can = (role, a) => (PERMS[role] || []).includes(a);
 
@@ -212,8 +223,10 @@ function candidates(slot) {
       service: p.wl.services.includes(slot.service),
       avail: p.wl.avail[TODAY_IDX][partOf(slot.start)],
       notice: p.wl.notice <= notice,
+      doctor: !p.wl.doctor || p.wl.doctor === slot.doc,
+      fresh: (p.wl.availDays || 0) <= AVAIL_DAYS,
     };
-    return { p, checks, eligible: checks.service && checks.avail && checks.notice };
+    return { p, checks, eligible: checks.service && checks.avail && checks.notice && checks.doctor && checks.fresh };
   });
   const order = S.rules.filter(r => r.on);
   const cmp = (a, b) => {
@@ -228,7 +241,10 @@ function candidates(slot) {
   };
   return { notice, eligible: list.filter(x => x.eligible).sort(cmp), out: list.filter(x => !x.eligible && x.checks.service) };
 }
-const pendingOffer = slot => slot.offers.find(o => o.state === 'pending');
+const pendingOffer = slot => slot.offers.find(o => o.state === 'pending' || o.state === 'review');
+const availStatus = p => { const d = (p.wl && p.wl.availDays) || 0; return { days: d, left: AVAIL_DAYS - d, state: d > AVAIL_DAYS ? 'expired' : d >= AVAIL_DAYS - 5 ? 'soon' : 'ok' }; };
+/* Delivery status of an SMS: sent, delivered or failed (a few demo patients have a phone that cannot be reached). */
+const delivery = m => { const p = patientById(m.pid); if (p && p.reach === 'off') return 'failed'; return m.t === S.clock ? 'sent' : 'delivered'; };
 
 /* ---------- messages ---------- */
 function renderTemplate(slot, link) {
@@ -236,7 +252,7 @@ function renderTemplate(slot, link) {
     .replace('{clinic}', clinicName()).replace('{service}', slot.service).replace('{time}', fmt(slot.start))
     .replace('{doctor}', slot.doc).replace('{link}', link).replace('{minutes}', S.settings.expiry);
 }
-function sms(pid, kind, text, link) { S.outbox.push({ id: uid(), pid, time: fmt(S.clock), kind, text, link: link || null }); }
+function sms(pid, kind, text, link) { S.outbox.push({ id: uid(), pid, time: fmt(S.clock), t: S.clock, kind, text, link: link || null }); }
 
 /* ---------- actions (call inside mutate) ---------- */
 function doCancel(slotId, by, reason, actor) {
@@ -246,6 +262,7 @@ function doCancel(slotId, by, reason, actor) {
   const p = patientById(s.patientId); if (p) p.appt = null;
   log(actor, `Cancellation logged for ${s.service} at ${fmt(s.start)} (${by === 'patient' ? 'by the patient in the app' : 'by reception'}${reason ? ', reason: ' + reason : ''})`);
   if (p) sms(p.id, 'confirm', `${clinicName()}: your ${s.service} appointment today at ${fmt(s.start)} was cancelled. You can book a new one in the app.`);
+  if (p) S.tasks.push({ id: uid(), pid: p.id, slotId: s.id, done: false, createdAt: S.clock, text: `Call ${p.name} and offer a new appointment` });
   if (S.settings.autoOffer) offerNext(s, 'Openslot');
 }
 function offerNext(slot, actor) {
@@ -260,10 +277,24 @@ function offerNext(slot, actor) {
 function doOffer(slot, pid, actor) {
   if (slot.status !== 'cancelled' || pendingOffer(slot)) return;
   const p = patientById(pid), o = { id: uid(), pid: p.id, sentAt: S.clock, expiresAt: Math.min(S.clock + S.settings.expiry, slot.start), state: 'pending', respondedAt: null };
-  slot.offers.push(o);
-  const link = 'openslot.app/o/' + o.id;
-  sms(p.id, 'offer', renderTemplate(slot, link), 'offer/' + o.id);
+  if (p.wl && p.wl.flag && S.settings.confirmPriority) { // clinical priority: a dentist confirms before the patient is contacted
+    o.state = 'review'; slot.offers.push(o);
+    log(actor, `Offer for ${slot.service} at ${fmt(slot.start)} to ${p.name} (clinical flag) waits for a dentist to confirm`);
+    return;
+  }
+  slot.offers.push(o); sendOffer(slot, o);
   log(actor, `Offer for ${slot.service} at ${fmt(slot.start)} sent to ${p.name} by SMS`);
+}
+function sendOffer(slot, o) { sms(o.pid, 'offer', renderTemplate(slot, 'openslot.app/o/' + o.id), 'offer/' + o.id); }
+function doConfirm(offerId, ok, actor) {
+  for (const slot of S.slots) {
+    const o = slot.offers.find(x => x.id === +offerId); if (!o) continue;
+    if (o.state !== 'review') return;
+    const p = patientById(o.pid);
+    if (ok) { o.state = 'pending'; o.sentAt = S.clock; o.expiresAt = Math.min(S.clock + S.settings.expiry, slot.start); sendOffer(slot, o); log(actor, `Confirmed the offer for ${slot.service} at ${fmt(slot.start)}. SMS sent to ${p.name}`); }
+    else { o.state = 'rejected'; log(actor, `Did not confirm the offer to ${p.name} for ${slot.service} at ${fmt(slot.start)}. Next patient is chosen`); if (S.settings.autoOffer) offerNext(slot, 'Openslot'); }
+    return;
+  }
 }
 function closeUnfilled(slot, why) {
   if (slot.status !== 'cancelled') return;
@@ -296,6 +327,7 @@ function doRespond(offerId, answer, actor) {
 function processExpiries() {
   for (const slot of S.slots) {
     for (const o of slot.offers) {
+      if (o.state === 'review' && S.clock >= slot.start - S.settings.cutoff) { o.state = 'expired'; log('Openslot', `Offer to ${patientById(o.pid).name} was not confirmed in time`); if (S.settings.autoOffer) offerNext(slot, 'Openslot'); continue; }
       if (o.state === 'pending' && S.clock >= o.expiresAt) {
         o.state = 'expired'; patientById(o.pid).wl.offers++;
         log('Openslot', `Offer to ${patientById(o.pid).name} expired without a reply`);
@@ -317,7 +349,7 @@ function stats() {
 }
 function offerLog() {
   const live = [];
-  S.slots.forEach(s => s.offers.forEach(o => { if (o.state !== 'pending') live.push({ time: 'Tue ' + fmt(o.respondedAt != null ? o.respondedAt : o.expiresAt), slot: s.service + ' ' + fmt(s.start), who: patientById(o.pid).name, result: o.state === 'accepted' ? 'accepted' : o.state, mins: (o.respondedAt != null ? o.respondedAt : o.expiresAt) - o.sentAt, sort: o.respondedAt != null ? o.respondedAt : o.expiresAt }); }));
+  S.slots.forEach(s => s.offers.forEach(o => { if (o.state !== 'pending' && o.state !== 'review' && o.state !== 'rejected') live.push({ time: 'Tue ' + fmt(o.respondedAt != null ? o.respondedAt : o.expiresAt), slot: s.service + ' ' + fmt(s.start), who: patientById(o.pid).name, result: o.state === 'accepted' ? 'accepted' : o.state, mins: (o.respondedAt != null ? o.respondedAt : o.expiresAt) - o.sentAt, sort: o.respondedAt != null ? o.respondedAt : o.expiresAt }); }));
   live.sort((a, b) => b.sort - a.sort);
   return [...live, ...S.seedLog];
 }
@@ -331,6 +363,11 @@ const api = {
   cancel: (id, by, reason, actor) => mutate(() => doCancel(id, by, reason, actor)),
   offer: (id, pid, actor) => mutate(() => doOffer(slotById(id), pid, actor)),
   respond: (offerId, answer, actor) => mutate(() => doRespond(offerId, answer, actor)),
+  confirmOffer: (offerId, ok, actor) => mutate(() => doConfirm(offerId, ok, actor)),
+  remind: (pid, actor) => mutate(() => { const p = patientById(pid); sms(p.id, 'reminder', `${clinicName()}: please confirm when you can come, so we keep offering you earlier appointments. Open openslot.app/a/${p.id}`, 'availability'); log(actor, `Reminder to confirm availability sent to ${p.name}`); }),
+  confirmAvail: (pid, actor) => mutate(() => { const p = patientById(pid); p.wl.availDays = 0; log(actor, 'Confirmed own availability'); }),
+  doneTask: (id, actor) => mutate(() => { const t = S.tasks.find(x => x.id === +id); if (t && !t.done) { t.done = true; log(actor, `${t.text}. Done`); } }),
+  availStatus, delivery, AVAIL_DAYS,
   advance: min => mutate(() => { S.clock += min; log('Demo tools', `Clock moved forward ${min} min`); }),
   update: fn => mutate(fn),
   reset: () => mutate(() => { Object.keys(S).forEach(k => delete S[k]); Object.assign(S, seed()); }),

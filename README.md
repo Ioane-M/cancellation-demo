@@ -64,3 +64,13 @@ Import the repo on vercel.com, framework preset **Other**, leave build command a
 - Anyone with a room link can change that room, and rooms are readable if you know the room code. That is fine for fictional data and a classroom demo, it is not a real security model. A real product needs authentication, per-clinic tenants, an SMS gateway, encryption and a data processing agreement with each clinic.
 - Matching is deliberately simple: service, availability, notice, then the clinic rules.
 - Numbers on the Recovery page for earlier weeks are sample data. "Staff time saved" assumes 12 minutes of phoning per refilled slot.
+
+## Version 8 (20 Nov): changes from the group's final text
+- **Preferred doctor.** Patients choose a doctor (or any doctor) when they join and in their availability. Matching only offers a slot with that doctor. Staff see it in the waiting list and can change it.
+- **Dentist confirms priority offers.** For patients with a clinical flag the offer first waits for a dentist (Settings, Offers can switch this off). Reception sees who is waiting for confirmation but cannot confirm. The patient is only texted after confirmation.
+- **Delivery status and phone fallback.** Every SMS shows Sent, Delivered or Failed. A failed SMS shows the patient's number and buttons to enter the answer given by phone. (Mira Kovac's phone cannot be reached in the demo data.)
+- **Generic SMS and plain reply.** The SMS has no details, only a secure link. Patients without the app can answer by SMS with 1 (accept) or 2 (decline), shown as buttons in the patient messages.
+- **Availability expires after 30 days.** Waiting list shows how old each availability is. Offers stop after 30 days. Staff can send a reminder, patients confirm in one tap in their app (Nadia Haddad is expired, Marta Wolf and Paul Gruber are close).
+- **Follow-up calls.** Every cancellation adds a task for reception to call the patient and offer a new appointment.
+- Fix: the Demo access section on the sign-in screens no longer closes by itself.
+
